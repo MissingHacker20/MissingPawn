@@ -1,0 +1,170 @@
+[
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Engine\\HistoryHeuristic.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Engine\\HistoryHeuristic.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Engine/HistoryHeuristic.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Engine/HistoryHeuristic.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Engine\\KillerMoves.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Engine\\KillerMoves.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Engine/KillerMoves.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Engine/KillerMoves.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Engine\\MoveOrdering.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Engine\\MoveOrdering.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Engine/MoveOrdering.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Engine/MoveOrdering.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Engine\\Search.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Engine\\Search.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Engine/Search.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Engine/Search.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Engine\\Transposition.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Engine\\Transposition.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Engine/Transposition.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Engine/Transposition.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Foundation\\Board.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Foundation\\Board.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Foundation/Board.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Foundation/Board.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Game\\Fen.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Game\\Fen.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Game/Fen.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Game/Fen.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Game\\GameHistory.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Game\\GameHistory.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Game/GameHistory.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Game/GameHistory.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Game\\GameState.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Game\\GameState.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Game/GameState.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Game/GameState.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Game\\Zobrist.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Game\\Zobrist.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Game/Zobrist.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Game/Zobrist.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Move\\MoveGenerator.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Move\\MoveGenerator.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Move/MoveGenerator.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Move/MoveGenerator.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Move\\MoveParser.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Move\\MoveParser.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Move/MoveParser.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Move/MoveParser.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Move\\MoveValidator.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Move\\MoveValidator.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Move/MoveValidator.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Move/MoveValidator.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\TimeManager.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\TimeManager.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/TimeManager.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/TimeManager.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCI.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCI.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCI.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCI.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCIInfoPrinter.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCIInfoPrinter.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCIInfoPrinter.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCIInfoPrinter.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCIOptionParser.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCIOptionParser.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCIOptionParser.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCIOptionParser.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCIOptions.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCIOptions.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCIOptions.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCIOptions.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCIParser.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCIParser.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCIParser.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCIParser.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Others\\UCI\\UCIPositionParser.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Others\\UCI\\UCIPositionParser.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Others/UCI/UCIPositionParser.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Others/UCI/UCIPositionParser.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Bishop.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Bishop.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Bishop.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Bishop.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Evaluation.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Evaluation.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Evaluation.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Evaluation.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\King.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\King.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/King.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/King.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Knight.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Knight.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Knight.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Knight.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Pawn.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Pawn.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Pawn.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Pawn.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Queen.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Queen.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Queen.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Queen.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\Rate\\Rook.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\Rate\\Rook.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/Rate/Rook.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/Rate/Rook.cpp.obj"
+},
+{
+  "directory": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS @CMakeFiles/MissingPawn.dir/includes_CXX.rsp -g -std=c++20 -Wall -Wextra -Wpedantic -O3 -o CMakeFiles\\MissingPawn.dir\\main.cpp.obj -c \"C:\\Users\\kuhac\\OneDrive\\Dokumenty\\Missing Pawn\\Source Code\\main.cpp\"",
+  "file": "C:/Users/kuhac/OneDrive/Dokumenty/Missing Pawn/Source Code/main.cpp",
+  "output": "CMakeFiles/MissingPawn.dir/main.cpp.obj"
+}
+]
