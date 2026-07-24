@@ -26,9 +26,7 @@ A chess engine written in C++.
 - CMake
 
 or:
-- Use MissingPawn.exe in folder `build/`
-
-(Adjust the command to match your project.)
+- Use ready MissingPawn.exe in folder `build/`
 
 ## Usage
 
