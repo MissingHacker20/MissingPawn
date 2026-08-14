@@ -1,0 +1,713 @@
+#include "MoveValidator.h"
+#include "Board.h"
+#include "AttackTables.h"
+
+#include <algorithm>
+
+void MoveValidator::filterLegalMoves(
+    Board& board,
+    MoveList& moveList)
+{
+    MoveList legalMoves;
+
+    for (int i = 0; i < moveList.size(); i++)
+    {
+        const Move& move = moveList[i];
+
+        if (isMoveLegal(board, move))
+        {
+            legalMoves.add(move);
+        }
+    }
+
+    moveList = legalMoves;
+}
+
+bool MoveValidator::isMoveLegal(
+    Board& board,
+    const Move& move)
+{
+    const Piece target = board.pieceAt(move.to);
+    if (target == Piece::WhiteKing || target == Piece::BlackKing)
+    {
+        return false;
+    }
+
+    //--------------------------------------------------
+    // Castling validation
+    //--------------------------------------------------
+
+    if (move.flag == MoveFlag::KingCastle)
+    {
+        ChessColor side = board.getSideToMove();
+
+        if (isKingInCheck(board, side))
+        {
+            return false;
+        }
+        UndoInfo undo;
+        Move stepMove(
+            move.from,
+            (side == ChessColor::White) ? Square::F1 : Square::F8,
+            move.piece,
+            MoveFlag::Quiet);
+
+        board.makeMove(stepMove, undo);
+        bool inCheckAfter = isKingInCheck(board, side);
+        board.undoMove(stepMove, undo);
+
+        if (inCheckAfter)
+        {
+            return false;
+        }
+    }
+    else if (move.flag == MoveFlag::QueenCastle)
+    {
+        ChessColor side = board.getSideToMove();
+
+        if (isKingInCheck(board, side))
+        {
+            return false;
+        }
+        UndoInfo undo;
+        Move stepMove(
+            move.from,
+            (side == ChessColor::White) ? Square::D1 : Square::D8,
+            move.piece,
+            MoveFlag::Quiet);
+
+        board.makeMove(stepMove, undo);
+        bool inCheckAfter = isKingInCheck(board, side);
+        board.undoMove(stepMove, undo);
+
+        if (inCheckAfter)
+        {
+            return false;
+        }
+    }
+
+    UndoInfo undoInfo;
+    ChessColor side = board.getSideToMove();
+
+    board.makeMove(move, undoInfo);
+    bool legal = !isKingInCheck(board, side);
+    board.undoMove(move, undoInfo);
+
+    return legal;
+}
+
+bool MoveValidator::isSquareAttacked(
+    const Board& board,
+    Square square,
+    ChessColor attacker)
+{
+    // Cache some bitboards to avoid repeated calls
+    const Bitboard occ = board.getAllOccupancy();
+
+    int sq = static_cast<int>(square);
+    int file = sq % 8;
+    int rank = sq / 8;
+
+    // Pawn attacks (inverse lookup: which pawns attack this square)
+    if (attacker == ChessColor::White) {
+        // White pawns attack from one rank below
+        if (rank > 0) {
+            // Left diagonal attacker: from file+1 (source file < 7)
+            if (file < 7 && board.pieceAt(static_cast<Square>(sq - 7)) == Piece::WhitePawn)
+                return true;
+            // Right diagonal attacker: from file-1 (source file > 0)
+            if (file > 0 && board.pieceAt(static_cast<Square>(sq - 9)) == Piece::WhitePawn)
+                return true;
+        }
+    } else {
+        // Black pawns attack from one rank above
+        if (rank < 7) {
+            // Left diagonal attacker: from file+1 (source file < 7)
+            if (file < 7 && board.pieceAt(static_cast<Square>(sq + 9)) == Piece::BlackPawn)
+                return true;
+            // Right diagonal attacker: from file-1 (source file > 0)
+            if (file > 0 && board.pieceAt(static_cast<Square>(sq + 7)) == Piece::BlackPawn)
+                return true;
+        }
+    }
+
+    const Bitboard knightAttacks = AttackTables::knightAttacks(square);
+    const Piece knight = (attacker == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
+    if (knightAttacks & board.getBitboard(knight)) return true;
+
+    const Bitboard kingAttacks = AttackTables::kingAttacks(square);
+    const Piece king = (attacker == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
+    if (kingAttacks & board.getBitboard(king)) return true;
+
+    constexpr int RookDirections[4][2] =
+    {
+        { 0,  1},
+        { 1,  0},
+        { 0, -1},
+        {-1,  0}
+    };
+
+    // Precompute attacker slider bitboards
+    const Bitboard rookOrQueen = board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook)
+        | board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
+
+    for (int dir = 0; dir < 4; dir++)
+    {
+        int file = static_cast<int>(square) % 8;
+        int rank = static_cast<int>(square) / 8;
+
+        while (true)
+        {
+            file += RookDirections[dir][0];
+            rank += RookDirections[dir][1];
+
+            if (file < 0 || file >= 8 || rank < 0 || rank >= 8)
+            {
+                break;
+            }
+
+            const Square target = static_cast<Square>(rank * 8 + file);
+
+            if (!getBit(occ, target))
+            {
+                continue;
+            }
+
+            if (getBit(rookOrQueen, target))
+            {
+                return true;
+            }
+
+            break;
+        }
+    }
+
+    constexpr int BishopDirections[4][2] =
+    {
+        { 1,  1},
+        { 1, -1},
+        {-1, -1},
+        {-1,  1}
+    };
+
+    const Bitboard bishopOrQueen = board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop)
+        | board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
+
+    for (int dir = 0; dir < 4; dir++)
+    {
+        int file = static_cast<int>(square) % 8;
+        int rank = static_cast<int>(square) / 8;
+
+        while (true)
+        {
+            file += BishopDirections[dir][0];
+            rank += BishopDirections[dir][1];
+
+            if (file < 0 || file >= 8 || rank < 0 || rank >= 8)
+            {
+                break;
+            }
+
+            const Square target = static_cast<Square>(rank * 8 + file);
+
+            if (!getBit(occ, target))
+            {
+                continue;
+            }
+
+            if (getBit(bishopOrQueen, target))
+            {
+                return true;
+            }
+
+            break;
+        }
+    }
+
+    return false;
+}
+
+bool MoveValidator::isKingInCheck(
+    const Board& board,
+    ChessColor side)
+{
+    Square kingSquare =
+        findKing(board, side);
+
+    if (kingSquare == Square::None)
+    {
+        return false;
+    }
+
+    bool inCheck = isSquareAttacked(
+        board,
+        kingSquare,
+        oppositeColor(side));
+
+    return inCheck;
+}
+
+ChessColor MoveValidator::oppositeColor(ChessColor color)
+{
+    return (color == ChessColor::White)
+        ? ChessColor::Black
+        : ChessColor::White;
+}
+
+Square MoveValidator::findKing(
+    const Board& board,
+    ChessColor side)
+{
+    Piece king =
+        (side == ChessColor::White)
+        ? Piece::WhiteKing
+        : Piece::BlackKing;
+
+    Bitboard kings = board.getBitboard(king);
+
+    if (kings == 0)
+    {
+        return Square::None;
+    }
+
+    return popLeastSignificantBit(kings);
+}
+
+int MoveValidator::pieceValue(Piece piece)
+{
+    switch (piece)
+    {
+    case Piece::WhitePawn:   case Piece::BlackPawn:   return 100;
+    case Piece::WhiteKnight: case Piece::BlackKnight: return 320;
+    case Piece::WhiteBishop: case Piece::BlackBishop: return 330;
+    case Piece::WhiteRook:   case Piece::BlackRook:   return 500;
+    case Piece::WhiteQueen:  case Piece::BlackQueen:  return 900;
+    default: return 0;
+    }
+}
+
+// Zwraca najtańszą figurę danego koloru, która atakuje pole.
+// Sprawdza kolejno: pionki, skoczki, gońce, wieże, hetmany, króla.
+// Zapisuje pole atakującego w `fromSquare`.
+// Ważne: dla gońców/wież/hetmanów sprawdzamy KONKRETNĄ figurę
+// (czy promień od tej figury do pola jest czysty), a nie isSquareAttacked
+// (które zwraca true, gdy JAKAKOLWIEK figura tego koloru atakuje pole).
+Piece MoveValidator::leastValuableAttacker(
+    const Board& board,
+    Square square,
+    ChessColor attacker,
+    Square& fromSquare)
+{
+    const auto pawn = (attacker == ChessColor::White) ? Piece::WhitePawn : Piece::BlackPawn;
+    const auto knight = (attacker == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
+    const auto bishop = (attacker == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop;
+    const auto rook = (attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook;
+    const auto queen = (attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen;
+    const auto king = (attacker == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
+
+    const int targetIndex = static_cast<int>(square);
+    const int targetFile = targetIndex % 8;
+    const int targetRank = targetIndex / 8;
+
+    // Pionki
+    Bitboard pawns = board.getBitboard(pawn);
+    while (pawns)
+    {
+        Square from = popLeastSignificantBit(pawns);
+        const Bitboard attacks = (attacker == ChessColor::White)
+            ? AttackTables::whitePawnAttacks(from)
+            : AttackTables::blackPawnAttacks(from);
+        if (getBit(attacks, square))
+        {
+            fromSquare = from;
+            return pawn;
+        }
+    }
+
+    // Skoczkowie
+    Bitboard knights = board.getBitboard(knight);
+    while (knights)
+    {
+        Square from = popLeastSignificantBit(knights);
+        if (getBit(AttackTables::knightAttacks(from), square))
+        {
+            fromSquare = from;
+            return knight;
+        }
+    }
+
+    // Gońce - sprawdzamy każdą konkretną figurę po przekątnych
+    Bitboard bishops = board.getBitboard(bishop);
+    while (bishops)
+    {
+        Square from = popLeastSignificantBit(bishops);
+        if (isDiagonalAttacker(board, from, targetFile, targetRank))
+        {
+            fromSquare = from;
+            return bishop;
+        }
+    }
+
+    // Wieże - sprawdzamy każdą konkretną figurę po liniach prostych
+    Bitboard rooks = board.getBitboard(rook);
+    while (rooks)
+    {
+        Square from = popLeastSignificantBit(rooks);
+        if (isStraightAttacker(board, from, targetFile, targetRank))
+        {
+            fromSquare = from;
+            return rook;
+        }
+    }
+
+    // Hetmany - atakują i po przekątnych, i po liniach prostych
+    Bitboard queens = board.getBitboard(queen);
+    while (queens)
+    {
+        Square from = popLeastSignificantBit(queens);
+        if (isDiagonalAttacker(board, from, targetFile, targetRank) ||
+            isStraightAttacker(board, from, targetFile, targetRank))
+        {
+            fromSquare = from;
+            return queen;
+        }
+    }
+
+    // Król
+    Bitboard kings = board.getBitboard(king);
+    while (kings)
+    {
+        Square from = popLeastSignificantBit(kings);
+        if (getBit(AttackTables::kingAttacks(from), square))
+        {
+            fromSquare = from;
+            return king;
+        }
+    }
+
+    fromSquare = Square::None;
+    return Piece::None;
+}
+
+// Sprawdza, czy figura na polu `from` atakuje pole (targetFile, targetRank)
+// po linii prostej (wiersz/kolumna) bez żadnych blokerów.
+bool MoveValidator::isStraightAttacker(
+    const Board& board,
+    Square from,
+    int targetFile,
+    int targetRank)
+{
+    const int fromIndex = static_cast<int>(from);
+    const int fromFile = fromIndex % 8;
+    const int fromRank = fromIndex / 8;
+
+    if (fromFile != targetFile && fromRank != targetRank)
+    {
+        return false; // nie ta sama linia/kolumna
+    }
+
+    const int fileStep = (fromFile == targetFile) ? 0 : ((targetFile > fromFile) ? 1 : -1);
+    const int rankStep = (fromRank == targetRank) ? 0 : ((targetRank > fromRank) ? 1 : -1);
+
+    int file = fromFile + fileStep;
+    int rank = fromRank + rankStep;
+
+    while (file != targetFile || rank != targetRank)
+    {
+        if (board.pieceAt(static_cast<Square>(rank * 8 + file)) != Piece::None)
+        {
+            return false; // bloker
+        }
+
+        file += fileStep;
+        rank += rankStep;
+    }
+
+    return true;
+}
+
+// Sprawdza, czy figura na polu `from` atakuje pole (targetFile, targetRank)
+// po przekątnej bez żadnych blokerów.
+bool MoveValidator::isDiagonalAttacker(
+    const Board& board,
+    Square from,
+    int targetFile,
+    int targetRank)
+{
+    const int fromIndex = static_cast<int>(from);
+    const int fromFile = fromIndex % 8;
+    const int fromRank = fromIndex / 8;
+
+    const int fileDiff = targetFile - fromFile;
+    const int rankDiff = targetRank - fromRank;
+
+    if (std::abs(fileDiff) != std::abs(rankDiff) || fileDiff == 0)
+    {
+        return false; // nie na przekątnej
+    }
+
+    const int fileStep = (fileDiff > 0) ? 1 : -1;
+    const int rankStep = (rankDiff > 0) ? 1 : -1;
+
+    int file = fromFile + fileStep;
+    int rank = fromRank + rankStep;
+
+    while (file != targetFile || rank != targetRank)
+    {
+        if (board.pieceAt(static_cast<Square>(rank * 8 + file)) != Piece::None)
+        {
+            return false; // bloker
+        }
+
+        file += fileStep;
+        rank += rankStep;
+    }
+
+    return true;
+}
+
+// Rekurencyjna część SEE. `value` to wartość figury, która właśnie
+// została "postawiona" na polu (i którą może zbić strona do ruchu).
+// Zwraca bilans wymiany z perspektywy strony, która ZACZĘŁA atak.
+int MoveValidator::seeRecursive(
+    Board& board,
+    Square square,
+    ChessColor sideToMove,
+    int value)
+{
+    Square fromSquare;
+    Piece attacker = leastValuableAttacker(board, square, sideToMove, fromSquare);
+
+    if (attacker == Piece::None)
+    {
+        // Nikt nie może zbić - strona, która ma teraz bić, nie może
+        // nic zyskać, więc rezygnuje. Bilans to 0 (nie bije).
+        return 0;
+    }
+
+    // Usuń atakującego z planszy (symulacja jego zbicia)
+    board.removePiece(attacker, fromSquare);
+
+    // Rekurencyjnie: strona przeciwna może teraz odbić.
+    // Od wyniku "odbicia" odejmujemy wartość figury, którą właśnie
+    // zbitiśmy (bo to zysk strony, która zaczęła).
+    const int opponentGain = seeRecursive(
+        board,
+        square,
+        oppositeColor(sideToMove),
+        pieceValue(attacker));
+
+// Bilans z perspektywy zaczynającej atak:
+    //   gain = wartość zbitej figury (value) - najlepszy wynik przeciwnika
+    int gain = value - opponentGain;
+
+    // Zwracamy wynik ze znakiem (zgodnie z komentarzem w nagłówku):
+    // dodatni = korzystna wymiana, ujemny = stratna.
+    return gain;
+}
+
+// Static Exchange Evaluation (SEE): symuluje wymianę na polu.
+// Zwraca bilans materiałowy z perspektywy strony, która zaczyna atak.
+// Ujemny wynik = strona zaczynająca traci; dodatni = zyskuje.
+int MoveValidator::see(
+    const Board& board,
+    Square square)
+{
+    const Piece victim = board.pieceAt(square);
+    if (victim == Piece::None)
+    {
+        return 0;
+    }
+
+// Strona, która zaczyna atak, to przeciwnik koloru figury na polu.
+    ChessColor attackerToMove = oppositeColor(getPieceColor(victim));
+
+    Board copy = board;
+
+    // Usuń bity kawałek (victim) z kopii ZANIM rozpoczniemy rekurencję SEE.
+    // Bez tego figura broniona tylko przez samą siebie (tj. wisząca) byłaby
+    // błędnie uznawana za chronioną – `leastValuableAttacker` mógłby "zbić"
+    // tą samą figurę, która jest ofiarą, i zaniżać stratę (gubienie hetmana).
+    copy.removePiece(victim, square);
+
+    return seeRecursive(
+        copy,
+        square,
+        attackerToMove,
+        pieceValue(victim));
+}
+
+int MoveValidator::evaluateTactics(
+    const Board& board)
+{
+    // Pojedyncze przejście po wszystkich polach. Zwraca wynik netto
+    // (biały - czarny): kara za "wiszące" figury strony posiadającej
+    // daną figurę. Dzięki temu ewaluacja wywołuje tę funkcję tylko
+    // raz zamiast osobno dla każdego koloru.
+    int score = 0;
+
+    for (int index = 0; index < 64; ++index)
+    {
+        const Square square = static_cast<Square>(index);
+        const Piece piece = board.pieceAt(square);
+
+        if (piece == Piece::None)
+        {
+            continue;
+        }
+
+        // Króla nie oceniamy - nie ma sensu karać za atak na króla
+        if (piece == Piece::WhiteKing || piece == Piece::BlackKing)
+        {
+            continue;
+        }
+
+        const ChessColor color = getPieceColor(piece);
+        const ChessColor enemy =
+            (color == ChessColor::White)
+                ? ChessColor::Black
+                : ChessColor::White;
+
+        int penalty = 0;
+
+        // Czy figura jest atakowana przez przeciwnika?
+        if (isSquareAttacked(board, square, enemy))
+        {
+            const int value = pieceValue(piece);
+
+            // SEE: zwraca bilans wymiany z perspektywy ATAKUJĄCEGO (przeciwnika).
+            // seeScore > 0  => przeciwnik zyskuje na wymianie => MY tracimy.
+            // seeScore == 0 => przeciwnik nie zyskuje (może zrezygnować) => bezpieczne.
+            const int seeScore = see(board, square);
+
+            if (seeScore > 0)
+            {
+                // Przeciwnik zyskuje materiał na wymianie - faktycznie
+                // "wisząca" figura. Kara za stratę.
+                penalty = std::min(seeScore, value);
+            }
+            else
+            {
+                // Brak opłacalnego bicia - figura w praktyce nie jest
+                // stracona. Minimalna, stała kara za bycie atakowanym
+                // (deformacja pozycyjna), by nie karcić legalnych ruchów
+                // na atakowane pola.
+                penalty = 10;
+            }
+        }
+
+        // Kara obciąża stronę, której figura należy.
+        if (color == ChessColor::White)
+        {
+            score -= penalty;
+        }
+        else
+        {
+            score += penalty;
+        }
+    }
+
+    return score;
+}
+
+void MoveValidator::updatePieceBitboards(
+    Board& board,
+    const MoveList& legalMoves)
+{
+    board.clearAllPieceBitboards();
+
+    for (int i = 0; i < legalMoves.size(); ++i)
+    {
+        const Move& move = legalMoves[i];
+        Bitboard moveBit = 0;
+        setBit(moveBit, move.to);
+        board.setPieceMoves(move.from, moveBit);
+
+        if (move.flag == MoveFlag::KingCastle)
+        {
+            if (move.piece == Piece::WhiteKing)
+            {
+                Bitboard rookMove = 0;
+                setBit(rookMove, Square::F1);
+                board.setPieceMoves(Square::H1, rookMove);
+            }
+            else
+            {
+                Bitboard rookMove = 0;
+                setBit(rookMove, Square::F8);
+                board.setPieceMoves(Square::H8, rookMove);
+            }
+        }
+        else if (move.flag == MoveFlag::QueenCastle)
+        {
+            if (move.piece == Piece::WhiteKing)
+            {
+                Bitboard rookMove = 0;
+                setBit(rookMove, Square::D1);
+                board.setPieceMoves(Square::A1, rookMove);
+            }
+            else
+            {
+                Bitboard rookMove = 0;
+                setBit(rookMove, Square::D8);
+                board.setPieceMoves(Square::A8, rookMove);
+            }
+        }
+    }
+
+    const Bitboard occ = board.getAllOccupancy();
+
+    for (int index = 0; index < 64; ++index)
+    {
+        const Square square = static_cast<Square>(index);
+        const Piece piece = board.pieceAt(square);
+
+        if (piece == Piece::None)
+        {
+            continue;
+        }
+
+        Bitboard attacks = 0;
+
+        switch (piece)
+        {
+        case Piece::WhitePawn:
+            attacks = AttackTables::whitePawnAttacks(square);
+            break;
+
+        case Piece::BlackPawn:
+            attacks = AttackTables::blackPawnAttacks(square);
+            break;
+
+        case Piece::WhiteKnight:
+        case Piece::BlackKnight:
+            attacks = AttackTables::knightAttacks(square);
+            break;
+
+        case Piece::WhiteKing:
+        case Piece::BlackKing:
+            attacks = AttackTables::kingAttacks(square);
+            break;
+
+        case Piece::WhiteBishop:
+        case Piece::BlackBishop:
+            attacks = AttackTables::bishopAttacks(square, occ);
+            break;
+
+        case Piece::WhiteRook:
+        case Piece::BlackRook:
+            attacks = AttackTables::rookAttacks(square, occ);
+            break;
+
+        case Piece::WhiteQueen:
+        case Piece::BlackQueen:
+            attacks = AttackTables::queenAttacks(square, occ);
+            break;
+
+        default:
+            break;
+        }
+
+        board.setPieceAttacks(square, attacks);
+    }
+}

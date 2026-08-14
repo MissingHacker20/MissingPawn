@@ -1,0 +1,623 @@
+#include "MoveGenerator.h"
+
+#include "AttackTables.h"
+#include "Bitboard.h"
+#include "Move.h"
+#include "MoveValidator.h"
+
+void MoveGenerator::generateMoves(
+    Board& board,
+    MoveList& moveList)
+{
+    moveList.clear();
+
+    MoveList pseudoMoves;
+
+    generatePawnMoves(board, pseudoMoves);
+
+    generateKnightMoves(board, pseudoMoves);
+
+    generateBishopMoves(board, pseudoMoves);
+
+    generateRookMoves(board, pseudoMoves);
+
+    generateQueenMoves(board, pseudoMoves);
+
+    generateKingMoves(board, pseudoMoves);
+
+    //--------------------------------------------------
+    // Keep only legal moves
+    //--------------------------------------------------
+
+    for (int i = 0; i < pseudoMoves.size(); i++)
+    {
+        const Move& move = pseudoMoves[i];
+
+        if (MoveValidator::isMoveLegal(board, move))
+        {
+            moveList.add(move);
+        }
+    }
+}
+
+void MoveGenerator::generateCaptures(
+    Board& board,
+    MoveList& captures)
+{
+    captures.clear();
+
+    ChessColor side = board.getSideToMove();
+
+    // Pawns (captures + en-passant)
+    {
+        Piece pawn = (side == ChessColor::White) ? Piece::WhitePawn : Piece::BlackPawn;
+        Bitboard pawns = board.getBitboard(pawn);
+
+        while (pawns)
+        {
+            Square from = popLeastSignificantBit(pawns);
+
+            int rank = static_cast<int>(from) / 8;
+
+            Bitboard attacks =
+                (side == ChessColor::White)
+                ? AttackTables::whitePawnAttacks(from)
+                : AttackTables::blackPawnAttacks(from);
+
+            Bitboard targets = attacks & board.getAllOccupancy() & ~board.getOccupancy(side);
+
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+
+            bool promotion =
+            (side == ChessColor::White && rank == 6) ||
+            (side == ChessColor::Black && rank == 1);
+
+                if (promotion)
+                {
+                    captures.add(Move(from, to, pawn, MoveFlag::PromotionCaptureKnight, target));
+                    captures.add(Move(from, to, pawn, MoveFlag::PromotionCaptureBishop, target));
+                    captures.add(Move(from, to, pawn, MoveFlag::PromotionCaptureRook, target));
+                    captures.add(Move(from, to, pawn, MoveFlag::PromotionCaptureQueen, target));
+                }
+                else
+                {
+                    captures.add(Move(from, to, pawn, MoveFlag::Capture, target));
+                }
+            }
+
+            // En passant
+            Square enPassant = board.getEnPassantSquare();
+            if (enPassant != Square::None)
+            {
+                Bitboard epAttacks =
+                    (side == ChessColor::White)
+                    ? AttackTables::whitePawnAttacks(from)
+                    : AttackTables::blackPawnAttacks(from);
+
+                if (getBit(epAttacks, enPassant))
+                {
+                    Piece capturedPawn = (side == ChessColor::White) ? Piece::BlackPawn : Piece::WhitePawn;
+                    captures.add(Move(from, enPassant, pawn, MoveFlag::EnPassant, capturedPawn));
+                }
+            }
+        }
+    }
+
+    // Knights
+    {
+        Piece knight = (side == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
+        Bitboard knights = board.getBitboard(knight);
+
+        while (knights)
+        {
+            Square from = popLeastSignificantBit(knights);
+            Bitboard attacks = AttackTables::knightAttacks(from);
+            Bitboard targets = attacks & board.getAllOccupancy() & ~board.getOccupancy(side);
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+                captures.add(Move(from, to, knight, MoveFlag::Capture, target));
+            }
+        }
+    }
+
+    // Bishops
+    {
+        Piece bishop = (side == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop;
+        Bitboard bishops = board.getBitboard(bishop);
+        Bitboard occupancy = board.getAllOccupancy();
+
+        while (bishops)
+        {
+            Square from = popLeastSignificantBit(bishops);
+            Bitboard attacks = AttackTables::bishopAttacks(from, occupancy);
+            Bitboard targets = attacks & occupancy & ~board.getOccupancy(side);
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+                captures.add(Move(from, to, bishop, MoveFlag::Capture, target));
+            }
+        }
+    }
+
+    // Rooks
+    {
+        Piece rook = (side == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook;
+        Bitboard rooks = board.getBitboard(rook);
+        Bitboard occupancy = board.getAllOccupancy();
+
+        while (rooks)
+        {
+            Square from = popLeastSignificantBit(rooks);
+            Bitboard attacks = AttackTables::rookAttacks(from, occupancy);
+            Bitboard targets = attacks & occupancy & ~board.getOccupancy(side);
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+                captures.add(Move(from, to, rook, MoveFlag::Capture, target));
+            }
+        }
+    }
+
+    // Queens
+    {
+        Piece queen = (side == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen;
+        Bitboard queens = board.getBitboard(queen);
+        Bitboard occupancy = board.getAllOccupancy();
+
+        while (queens)
+        {
+            Square from = popLeastSignificantBit(queens);
+            Bitboard attacks = AttackTables::queenAttacks(from, occupancy);
+            Bitboard targets = attacks & occupancy & ~board.getOccupancy(side);
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+                captures.add(Move(from, to, queen, MoveFlag::Capture, target));
+            }
+        }
+    }
+
+    // King captures
+    {
+        Piece king = (side == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
+        Bitboard kings = board.getBitboard(king);
+
+        while (kings)
+        {
+            Square from = popLeastSignificantBit(kings);
+            Bitboard attacks = AttackTables::kingAttacks(from);
+            Bitboard targets = attacks & board.getAllOccupancy() & ~board.getOccupancy(side);
+            while (targets)
+            {
+                Square to = popLeastSignificantBit(targets);
+                Piece target = board.pieceAt(to);
+                captures.add(Move(from, to, king, MoveFlag::Capture, target));
+            }
+        }
+    }
+}
+
+void MoveGenerator::generatePawnMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece pawn =
+        (side == ChessColor::White)
+        ? Piece::WhitePawn
+        : Piece::BlackPawn;
+
+    Bitboard pawns = board.getBitboard(pawn);
+
+    while (pawns)
+    {
+        Square from = popLeastSignificantBit(pawns);
+
+        int file = static_cast<int>(from) % 8;
+        int rank = static_cast<int>(from) / 8;
+
+        //-------------------------------------------------
+        // One-square push
+        //-------------------------------------------------
+
+        int forwardRank =
+            rank + (side == ChessColor::White ? 1 : -1);
+
+        if (forwardRank >= 0 && forwardRank < 8)
+        {
+            Square to =
+                static_cast<Square>(forwardRank * 8 + file);
+
+            if (board.pieceAt(to) == Piece::None)
+            {
+                bool promotion =
+                (side == ChessColor::White && forwardRank == 7) ||
+                (side == ChessColor::Black && forwardRank == 0);
+
+                if (promotion)
+                {
+                    moveList.add(
+                        Move(from, to, pawn, MoveFlag::PromotionKnight));
+
+                    moveList.add(
+                        Move(from, to, pawn, MoveFlag::PromotionBishop));
+
+                    moveList.add(
+                        Move(from, to, pawn, MoveFlag::PromotionRook));
+
+                    moveList.add(
+                     Move(from, to, pawn, MoveFlag::PromotionQueen));
+                }
+                else
+                {
+                    moveList.add(
+                        Move(from, to, pawn, MoveFlag::Quiet)
+                    );
+
+                    //-----------------------------------------
+                    // Double push
+                    //-----------------------------------------
+
+                    bool startRank =
+                        (side == ChessColor::White && rank == 1) ||
+                        (side == ChessColor::Black && rank == 6);
+
+                    if (startRank)
+                    {
+                        int secondRank =
+                        rank + (side == ChessColor::White ? 2 : -2);
+
+                        Square second =
+                            static_cast<Square>(secondRank * 8 + file);
+
+                        if (board.pieceAt(second) == Piece::None)
+                        {
+                            moveList.add(
+                                Move(from, second, pawn, MoveFlag::DoublePawnPush));
+                        }
+                    }
+                }
+            }
+        }
+
+        //-------------------------------------------------
+        // Captures
+        //-------------------------------------------------
+
+        Bitboard attacks =
+            (side == ChessColor::White)
+            ? AttackTables::whitePawnAttacks(from)
+            : AttackTables::blackPawnAttacks(from);
+
+        while (attacks)
+        {
+            Square to =
+                popLeastSignificantBit(attacks);
+
+            Piece target =
+                board.pieceAt(to);
+
+            if (target == Piece::None)
+                continue;
+
+            if (getPieceColor(target) == side)
+                continue;
+
+            bool promotion =
+                (side == ChessColor::White && rank == 6) ||
+                (side == ChessColor::Black && rank == 1);
+
+            if (promotion)
+    {
+        moveList.add(
+            Move(from, to, pawn,
+            MoveFlag::PromotionCaptureKnight, target));
+
+        moveList.add(
+            Move(from, to, pawn,
+                MoveFlag::PromotionCaptureBishop, target));
+
+        moveList.add(
+            Move(from, to, pawn,
+                MoveFlag::PromotionCaptureRook, target));
+
+        moveList.add(
+            Move(from, to, pawn,
+            MoveFlag::PromotionCaptureQueen, target));
+    }
+    else
+    {
+        moveList.add(
+            Move(from,
+                 to,
+                 pawn,
+                 MoveFlag::Capture,
+                 target));
+    }
+        }
+
+        //-------------------------------------------------
+        // En passant
+        //-------------------------------------------------
+
+        Square enPassant = board.getEnPassantSquare();
+
+        if (enPassant != Square::None)
+        {
+            Bitboard attacks =
+                (side == ChessColor::White)
+                ? AttackTables::whitePawnAttacks(from)
+                : AttackTables::blackPawnAttacks(from);
+
+            if (getBit(attacks, enPassant))
+            {
+                Piece capturedPawn =
+                    (side == ChessColor::White)
+                    ? Piece::BlackPawn
+                    : Piece::WhitePawn;
+
+                moveList.add(
+                Move(
+                    from,
+                    enPassant,
+                    pawn,
+                    MoveFlag::EnPassant,
+                    capturedPawn));
+            }
+        }
+    }
+}
+
+void MoveGenerator::generateKnightMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece knight =
+        (side == ChessColor::White)
+        ? Piece::WhiteKnight
+        : Piece::BlackKnight;
+
+    Bitboard knights = board.getBitboard(knight);
+
+    while (knights)
+    {
+        Square from = popLeastSignificantBit(knights);
+
+        Bitboard attacks =
+            AttackTables::knightAttacks(from);
+
+        // Remove squares occupied by our own pieces
+        attacks &= ~board.getOccupancy(side);
+
+        while (attacks)
+        {
+            Square to = popLeastSignificantBit(attacks);
+
+            Piece target = board.pieceAt(to);
+
+            MoveFlag flag =
+                (board.pieceAt(to) == Piece::None)
+                ? MoveFlag::Quiet
+                : MoveFlag::Capture;
+
+            moveList.add(Move(from, to, knight, flag, target));
+        }
+    }
+}
+
+void MoveGenerator::generateBishopMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece bishop =
+        (side == ChessColor::White)
+        ? Piece::WhiteBishop
+        : Piece::BlackBishop;
+
+    Bitboard bishops = board.getBitboard(bishop);
+    Bitboard occupancy = board.getAllOccupancy();
+
+    while (bishops)
+    {
+        Square from = popLeastSignificantBit(bishops);
+
+        Bitboard attacks = AttackTables::bishopAttacks(from, occupancy);
+        attacks &= ~board.getOccupancy(side);
+
+        while (attacks)
+        {
+            Square to = popLeastSignificantBit(attacks);
+
+            Piece target = board.pieceAt(to);
+
+            MoveFlag flag =
+                (target == Piece::None)
+                ? MoveFlag::Quiet
+                : MoveFlag::Capture;
+
+            moveList.add(Move(from, to, bishop, flag, target));
+        }
+    }
+}
+
+void MoveGenerator::generateRookMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece rook =
+        (side == ChessColor::White)
+        ? Piece::WhiteRook
+        : Piece::BlackRook;
+
+    Bitboard rooks = board.getBitboard(rook);
+    Bitboard occupancy = board.getAllOccupancy();
+
+    while (rooks)
+    {
+        Square from = popLeastSignificantBit(rooks);
+
+        Bitboard attacks = AttackTables::rookAttacks(from, occupancy);
+        attacks &= ~board.getOccupancy(side);
+
+        while (attacks)
+        {
+            Square to = popLeastSignificantBit(attacks);
+
+            Piece target = board.pieceAt(to);
+
+            MoveFlag flag =
+                (target == Piece::None)
+                ? MoveFlag::Quiet
+                : MoveFlag::Capture;
+
+            moveList.add(Move(from, to, rook, flag, target));
+        }
+    }
+}
+
+void MoveGenerator::generateQueenMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece queen =
+        (side == ChessColor::White)
+        ? Piece::WhiteQueen
+        : Piece::BlackQueen;
+
+    Bitboard queens = board.getBitboard(queen);
+    Bitboard occupancy = board.getAllOccupancy();
+
+    while (queens)
+    {
+        Square from = popLeastSignificantBit(queens);
+
+        Bitboard attacks = AttackTables::queenAttacks(from, occupancy);
+        attacks &= ~board.getOccupancy(side);
+
+        while (attacks)
+        {
+            Square to = popLeastSignificantBit(attacks);
+
+            Piece target = board.pieceAt(to);
+
+            MoveFlag flag =
+                (target == Piece::None)
+                ? MoveFlag::Quiet
+                : MoveFlag::Capture;
+
+            moveList.add(Move(from, to, queen, flag, target));
+        }
+    }
+}
+
+void MoveGenerator::generateKingMoves(
+    const Board& board,
+    MoveList& moveList)
+{
+    ChessColor side = board.getSideToMove();
+
+    Piece king =
+        (side == ChessColor::White)
+        ? Piece::WhiteKing
+        : Piece::BlackKing;
+
+    Bitboard kings = board.getBitboard(king);
+
+    while (kings)
+    {
+        Square from = popLeastSignificantBit(kings);
+
+        Bitboard attacks =
+            AttackTables::kingAttacks(from);
+
+        // Usuń własne figury
+        attacks &= ~board.getOccupancy(side);
+
+        while (attacks)
+        {
+            Square to = popLeastSignificantBit(attacks);
+
+            Piece target = board.pieceAt(to);
+
+            MoveFlag flag =
+                (target == Piece::None)
+                ? MoveFlag::Quiet
+                : MoveFlag::Capture;
+
+            moveList.add(
+                Move(from, to, king, flag, target));
+        }
+
+        //--------------------------------------------------
+        // Castling - w jednym if-else if dla obu kolorów
+        //--------------------------------------------------
+
+        if (side == ChessColor::White)
+        {
+            // King side castle
+            if ((board.getCastlingRights() & 0b0001) &&
+                board.pieceAt(Square::H1) == Piece::WhiteRook &&
+                board.pieceAt(Square::F1) == Piece::None &&
+                board.pieceAt(Square::G1) == Piece::None)
+            {
+                moveList.add(
+                    Move(Square::E1, Square::G1,
+                         Piece::WhiteKing, MoveFlag::KingCastle));
+            }
+
+            // Queen side castle
+            if ((board.getCastlingRights() & 0b0010) &&
+                board.pieceAt(Square::A1) == Piece::WhiteRook &&
+                board.pieceAt(Square::B1) == Piece::None &&
+                board.pieceAt(Square::C1) == Piece::None &&
+                board.pieceAt(Square::D1) == Piece::None)
+            {
+                moveList.add(
+                    Move(Square::E1, Square::C1,
+                         Piece::WhiteKing, MoveFlag::QueenCastle));
+            }
+        }
+        else
+        {
+            // King side castle
+            if ((board.getCastlingRights() & 0b0100) &&
+                board.pieceAt(Square::H8) == Piece::BlackRook &&
+                board.pieceAt(Square::F8) == Piece::None &&
+                board.pieceAt(Square::G8) == Piece::None)
+            {
+                moveList.add(
+                    Move(Square::E8, Square::G8,
+                         Piece::BlackKing, MoveFlag::KingCastle));
+            }
+
+            // Queen side castle
+            if ((board.getCastlingRights() & 0b1000) &&
+                board.pieceAt(Square::A8) == Piece::BlackRook &&
+                board.pieceAt(Square::B8) == Piece::None &&
+                board.pieceAt(Square::C8) == Piece::None &&
+                board.pieceAt(Square::D8) == Piece::None)
+            {
+                moveList.add(
+                    Move(Square::E8, Square::C8,
+                         Piece::BlackKing, MoveFlag::QueenCastle));
+            }
+        }
+    }
+}

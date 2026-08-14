@@ -1,0 +1,17 @@
+build/
+.vscode/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.o
+*.dll
+*.lib
+*.exp
+*.suo
+*.sdf
+*.opensdf
+*.user
+*.ncb
+TODO.md
+TODO.txt
