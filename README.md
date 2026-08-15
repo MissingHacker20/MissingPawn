@@ -1,6 +1,6 @@
 # MissingPawn
 
-> A modern UCI chess engine focused on the strength of Pawn structure.
+> A modern UCI chess engine focused on the strength of pawn structure.
 
 ## About
 

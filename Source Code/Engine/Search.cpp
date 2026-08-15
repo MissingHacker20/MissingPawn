@@ -102,7 +102,7 @@ struct NodeRepGuard
 bool Search::enterNode(uint64_t zobristKey)
 {
     repetitionCounts[zobristKey]++;
-    return repetitionCounts[zobristKey] >= 2;
+    return repetitionCounts[zobristKey] >= 3;
 }
 
 void Search::exitNode(uint64_t zobristKey)
