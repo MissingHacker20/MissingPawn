@@ -21,7 +21,9 @@ GameResult GameState::getResult(const Board& board)
     // makeMove/undoMove). Ponieważ getResult jest const, używamy lokalnej kopii.
     Board copy = board;
     MoveList legalMoves;
-    MoveGenerator::generateMoves(copy, legalMoves);
+    const MoveValidator::CheckInfo pseudoInfo{};
+    MoveGenerator::generateMoves(copy, legalMoves, pseudoInfo);
+    MoveValidator::filterLegalMoves(copy, legalMoves);
 
     if (legalMoves.size() != 0)
     {

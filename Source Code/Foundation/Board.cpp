@@ -31,30 +31,74 @@ void Board::clear()
 
 void Board::setPiece(Piece piece, Square square)
 {
+    const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     setBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = piece;
 
-    updateOccupancy();
+    if (static_cast<int>(piece) >= static_cast<int>(Piece::WhitePawn) &&
+        static_cast<int>(piece) <= static_cast<int>(Piece::WhiteKing))
+    {
+        whiteOccupancy |= bit;
+    }
+    else
+    {
+        blackOccupancy |= bit;
+    }
+    allOccupancy |= bit;
 }
 
 void Board::removePiece(Piece piece, Square square)
 {
+    const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     clearBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = Piece::None;
 
-    updateOccupancy();
+    if (static_cast<int>(piece) >= static_cast<int>(Piece::WhitePawn) &&
+        static_cast<int>(piece) <= static_cast<int>(Piece::WhiteKing))
+    {
+        whiteOccupancy &= ~bit;
+    }
+    else
+    {
+        blackOccupancy &= ~bit;
+    }
+    allOccupancy &= ~bit;
 }
 
 void Board::setPieceInternal(Piece piece, Square square)
 {
+    const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     setBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = piece;
+
+    if (static_cast<int>(piece) >= static_cast<int>(Piece::WhitePawn) &&
+        static_cast<int>(piece) <= static_cast<int>(Piece::WhiteKing))
+    {
+        whiteOccupancy |= bit;
+    }
+    else
+    {
+        blackOccupancy |= bit;
+    }
+    allOccupancy |= bit;
 }
 
 void Board::removePieceInternal(Piece piece, Square square)
 {
+    const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     clearBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = Piece::None;
+
+    if (static_cast<int>(piece) >= static_cast<int>(Piece::WhitePawn) &&
+        static_cast<int>(piece) <= static_cast<int>(Piece::WhiteKing))
+    {
+        whiteOccupancy &= ~bit;
+    }
+    else
+    {
+        blackOccupancy &= ~bit;
+    }
+    allOccupancy &= ~bit;
 }
 
 bool Board::hasPiece(Piece piece, Square square) const
@@ -138,8 +182,6 @@ void Board::setStartPosition()
     setPiece(Piece::BlackQueen, Square::D8);
     setPiece(Piece::BlackKing, Square::E8);
 
-    updateOccupancy();
-
     sideToMove = ChessColor::White;
 
     castlingRights = 0b1111;
@@ -171,6 +213,8 @@ void Board::makeMove(
     // Save current board state
     //--------------------------------------------------
 
+    undoInfo.zobristKey = zobristKey;
+
     if (move.flag == MoveFlag::EnPassant)
     {
         Square capturedPawn =
@@ -185,15 +229,20 @@ void Board::makeMove(
         undoInfo.capturedPiece = move.capturedPiece;
     }
 
-undoInfo.castlingRights = castlingRights;
+    undoInfo.castlingRights = castlingRights;
     undoInfo.enPassantSquare = enPassantSquare;
     undoInfo.sideToMove = sideToMove;
     undoInfo.halfmoveClock = halfmoveClock;
     undoInfo.fullmoveNumber = fullmoveNumber;
 
     //--------------------------------------------------
-    // Clear en passant square
+    // Clear en passant square (XOR out old EP if valid)
     //--------------------------------------------------
+
+    if (Zobrist::isEnPassantValid(*this, enPassantSquare))
+    {
+        zobristKey ^= Zobrist::getEnPassantKey(enPassantSquare);
+    }
 
     enPassantSquare = Square::None;
 
@@ -209,6 +258,9 @@ undoInfo.castlingRights = castlingRights;
 
     case MoveFlag::Quiet:
     {
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
+
         removePieceInternal(move.piece, move.from);
         setPieceInternal(move.piece, move.to);
 
@@ -221,6 +273,10 @@ undoInfo.castlingRights = castlingRights;
 
     case MoveFlag::Capture:
     {
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
+        zobristKey ^= Zobrist::getPieceKey(undoInfo.capturedPiece, move.to);
+
         removePieceInternal(undoInfo.capturedPiece, move.to);
         removePieceInternal(move.piece, move.from);
         setPieceInternal(move.piece, move.to);
@@ -233,168 +289,207 @@ undoInfo.castlingRights = castlingRights;
     //--------------------------------------------------
 
     case MoveFlag::DoublePawnPush:
-{
-    removePieceInternal(move.piece, move.from);
-    setPieceInternal(move.piece, move.to);
-
-    if (move.piece == Piece::WhitePawn)
     {
-        enPassantSquare = Square(
-            static_cast<int>(move.from) + 8);
-    }
-    else
-    {
-        enPassantSquare = Square(
-            static_cast<int>(move.from) - 8);
-    }
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
 
-    break;
-}
+        removePieceInternal(move.piece, move.from);
+        setPieceInternal(move.piece, move.to);
+
+        if (move.piece == Piece::WhitePawn)
+        {
+            enPassantSquare = Square(
+                static_cast<int>(move.from) + 8);
+        }
+        else
+        {
+            enPassantSquare = Square(
+                static_cast<int>(move.from) - 8);
+        }
+
+        break;
+    }
 
     //--------------------------------------------------
     // King side castle
     //--------------------------------------------------
 
     case MoveFlag::KingCastle:
-{
-    removePieceInternal(move.piece, move.from);
-    setPieceInternal(move.piece, move.to);
-
-    if (move.piece == Piece::WhiteKing)
     {
-        removePieceInternal(Piece::WhiteRook, Square::H1);
-        setPieceInternal(Piece::WhiteRook, Square::F1);
-    }
-    else
-    {
-        removePieceInternal(Piece::BlackRook, Square::H8);
-        setPieceInternal(Piece::BlackRook, Square::F8);
-    }
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
 
-    break;
-}
+        removePieceInternal(move.piece, move.from);
+        setPieceInternal(move.piece, move.to);
+
+        if (move.piece == Piece::WhiteKing)
+        {
+            zobristKey ^= Zobrist::getPieceKey(Piece::WhiteRook, Square::H1);
+            zobristKey ^= Zobrist::getPieceKey(Piece::WhiteRook, Square::F1);
+
+            removePieceInternal(Piece::WhiteRook, Square::H1);
+            setPieceInternal(Piece::WhiteRook, Square::F1);
+        }
+        else
+        {
+            zobristKey ^= Zobrist::getPieceKey(Piece::BlackRook, Square::H8);
+            zobristKey ^= Zobrist::getPieceKey(Piece::BlackRook, Square::F8);
+
+            removePieceInternal(Piece::BlackRook, Square::H8);
+            setPieceInternal(Piece::BlackRook, Square::F8);
+        }
+
+        break;
+    }
 
     //--------------------------------------------------
     // Queen side castle
     //--------------------------------------------------
 
     case MoveFlag::QueenCastle:
-{
-    removePieceInternal(move.piece, move.from);
-    setPieceInternal(move.piece, move.to);
-
-    if (move.piece == Piece::WhiteKing)
     {
-        removePieceInternal(Piece::WhiteRook, Square::A1);
-        setPieceInternal(Piece::WhiteRook, Square::D1);
-    }
-    else
-    {
-        removePieceInternal(Piece::BlackRook, Square::A8);
-        setPieceInternal(Piece::BlackRook, Square::D8);
-    }
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
 
-    break;
-}
+        removePieceInternal(move.piece, move.from);
+        setPieceInternal(move.piece, move.to);
+
+        if (move.piece == Piece::WhiteKing)
+        {
+            zobristKey ^= Zobrist::getPieceKey(Piece::WhiteRook, Square::A1);
+            zobristKey ^= Zobrist::getPieceKey(Piece::WhiteRook, Square::D1);
+
+            removePieceInternal(Piece::WhiteRook, Square::A1);
+            setPieceInternal(Piece::WhiteRook, Square::D1);
+        }
+        else
+        {
+            zobristKey ^= Zobrist::getPieceKey(Piece::BlackRook, Square::A8);
+            zobristKey ^= Zobrist::getPieceKey(Piece::BlackRook, Square::D8);
+
+            removePieceInternal(Piece::BlackRook, Square::A8);
+            setPieceInternal(Piece::BlackRook, Square::D8);
+        }
+
+        break;
+    }
 
     //--------------------------------------------------
     // En passant
     //--------------------------------------------------
 
     case MoveFlag::EnPassant:
-{
-    removePieceInternal(move.piece, move.from);
-    setPieceInternal(move.piece, move.to);
+    {
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.to);
 
-    Square capturedPawn =
-        (move.piece == Piece::WhitePawn)
-        ? static_cast<Square>(static_cast<int>(move.to) - 8)
-        : static_cast<Square>(static_cast<int>(move.to) + 8);
+        Square capturedPawn =
+            (move.piece == Piece::WhitePawn)
+            ? static_cast<Square>(static_cast<int>(move.to) - 8)
+            : static_cast<Square>(static_cast<int>(move.to) + 8);
 
-    removePieceInternal(undoInfo.capturedPiece, capturedPawn);
+        zobristKey ^= Zobrist::getPieceKey(undoInfo.capturedPiece, capturedPawn);
 
-    break;
-}
+        removePieceInternal(move.piece, move.from);
+        setPieceInternal(move.piece, move.to);
+
+        removePieceInternal(undoInfo.capturedPiece, capturedPawn);
+
+        break;
+    }
 
     //--------------------------------------------------
     // Promotions
     //--------------------------------------------------
 
-case MoveFlag::PromotionKnight:
-case MoveFlag::PromotionBishop:
-case MoveFlag::PromotionRook:
-case MoveFlag::PromotionQueen:
+    case MoveFlag::PromotionKnight:
+    case MoveFlag::PromotionBishop:
+    case MoveFlag::PromotionRook:
+    case MoveFlag::PromotionQueen:
 
-case MoveFlag::PromotionCaptureKnight:
-case MoveFlag::PromotionCaptureBishop:
-case MoveFlag::PromotionCaptureRook:
-case MoveFlag::PromotionCaptureQueen:
-{
-    Piece promotedPiece;
-
-    if (move.piece == Piece::WhitePawn)
+    case MoveFlag::PromotionCaptureKnight:
+    case MoveFlag::PromotionCaptureBishop:
+    case MoveFlag::PromotionCaptureRook:
+    case MoveFlag::PromotionCaptureQueen:
     {
-        switch (move.flag)
+        Piece promotedPiece;
+
+        if (move.piece == Piece::WhitePawn)
         {
-        case MoveFlag::PromotionKnight:
-            promotedPiece = Piece::WhiteKnight;
-            break;
+            switch (move.flag)
+            {
+            case MoveFlag::PromotionKnight:
+            case MoveFlag::PromotionCaptureKnight:
+                promotedPiece = Piece::WhiteKnight;
+                break;
 
-        case MoveFlag::PromotionBishop:
-            promotedPiece = Piece::WhiteBishop;
-            break;
+            case MoveFlag::PromotionBishop:
+            case MoveFlag::PromotionCaptureBishop:
+                promotedPiece = Piece::WhiteBishop;
+                break;
 
-        case MoveFlag::PromotionRook:
-            promotedPiece = Piece::WhiteRook;
-            break;
+            case MoveFlag::PromotionRook:
+            case MoveFlag::PromotionCaptureRook:
+                promotedPiece = Piece::WhiteRook;
+                break;
 
-        default:
-            promotedPiece = Piece::WhiteQueen;
-            break;
+            default:
+                promotedPiece = Piece::WhiteQueen;
+                break;
+            }
         }
-    }
-    else
-    {
-        switch (move.flag)
+        else
         {
-        case MoveFlag::PromotionKnight:
-            promotedPiece = Piece::BlackKnight;
-            break;
+            switch (move.flag)
+            {
+            case MoveFlag::PromotionKnight:
+            case MoveFlag::PromotionCaptureKnight:
+                promotedPiece = Piece::BlackKnight;
+                break;
 
-        case MoveFlag::PromotionBishop:
-            promotedPiece = Piece::BlackBishop;
-            break;
+            case MoveFlag::PromotionBishop:
+            case MoveFlag::PromotionCaptureBishop:
+                promotedPiece = Piece::BlackBishop;
+                break;
 
-        case MoveFlag::PromotionRook:
-            promotedPiece = Piece::BlackRook;
-            break;
+            case MoveFlag::PromotionRook:
+            case MoveFlag::PromotionCaptureRook:
+                promotedPiece = Piece::BlackRook;
+                break;
 
-        default:
-            promotedPiece = Piece::BlackQueen;
-            break;
+            default:
+                promotedPiece = Piece::BlackQueen;
+                break;
+            }
         }
-    }
 
-    if (move.capturedPiece != Piece::None)
-    {
+        zobristKey ^= Zobrist::getPieceKey(move.piece, move.from);
+
+        if (move.capturedPiece != Piece::None)
+        {
+            zobristKey ^= Zobrist::getPieceKey(move.capturedPiece, move.to);
+            removePieceInternal(
+                move.capturedPiece,
+                move.to);
+        }
+
         removePieceInternal(
-            move.capturedPiece,
+            move.piece,
+            move.from);
+
+        zobristKey ^= Zobrist::getPieceKey(promotedPiece, move.to);
+
+        setPieceInternal(
+            promotedPiece,
             move.to);
     }
-
-    removePieceInternal(
-        move.piece,
-        move.from);
-
-    setPieceInternal(
-        promotedPiece,
-        move.to);
-}
     }
-    
+
     //--------------------------------------------------
-    // Update castling rights
+    // Update castling rights (XOR out old, XOR in new)
     //--------------------------------------------------
+
+    zobristKey ^= Zobrist::getCastlingKey(castlingRights);
 
     switch (move.from)
     {
@@ -424,11 +519,7 @@ case MoveFlag::PromotionCaptureQueen:
 
     default:
         break;
-}
-
-    //--------------------------------------------------
-    // Captured rook loses castling rights
-    //--------------------------------------------------
+    }
 
     switch (move.to)
     {
@@ -450,7 +541,9 @@ case MoveFlag::PromotionCaptureQueen:
 
     default:
         break;
-}
+    }
+
+    zobristKey ^= Zobrist::getCastlingKey(castlingRights);
 
     //--------------------------------------------------
     // Update halfmove clock
@@ -468,8 +561,10 @@ case MoveFlag::PromotionCaptureQueen:
     }
 
     //--------------------------------------------------
-    // Change side
+    // Change side (XOR side key)
     //--------------------------------------------------
+
+    zobristKey ^= Zobrist::getSideKey(sideToMove);
 
     if (sideToMove == ChessColor::Black)
     {
@@ -481,13 +576,19 @@ case MoveFlag::PromotionCaptureQueen:
         ? ChessColor::Black
         : ChessColor::White;
 
+    zobristKey ^= Zobrist::getSideKey(sideToMove);
+
+    // Po zmianie strony sprawdzamy, czy przeciwnik rzeczywiście może bić
+    // en passant. Przed zmianą byłaby badana niewłaściwa strona.
+    if (Zobrist::isEnPassantValid(*this, enPassantSquare))
+    {
+        zobristKey ^= Zobrist::getEnPassantKey(enPassantSquare);
+    }
+
     clearPieceAttacks(move.from);
     clearPieceAttacks(move.to);
     clearPieceMoves(move.from);
     clearPieceMoves(move.to);
-
-    updateZobristKey();
-    updateOccupancy();
 }
 
 void Board::undoMove(
@@ -678,14 +779,17 @@ sideToMove = undoInfo.sideToMove;
             switch (move.flag)
             {
             case MoveFlag::PromotionKnight:
+            case MoveFlag::PromotionCaptureKnight:
                 promotedPiece = Piece::WhiteKnight;
                 break;
 
             case MoveFlag::PromotionBishop:
+            case MoveFlag::PromotionCaptureBishop:
                 promotedPiece = Piece::WhiteBishop;
                 break;
 
             case MoveFlag::PromotionRook:
+            case MoveFlag::PromotionCaptureRook:
                 promotedPiece = Piece::WhiteRook;
                 break;
 
@@ -699,14 +803,17 @@ sideToMove = undoInfo.sideToMove;
             switch (move.flag)
             {
             case MoveFlag::PromotionKnight:
+            case MoveFlag::PromotionCaptureKnight:
                 promotedPiece = Piece::BlackKnight;
                 break;
 
             case MoveFlag::PromotionBishop:
+            case MoveFlag::PromotionCaptureBishop:
                 promotedPiece = Piece::BlackBishop;
                 break;
 
             case MoveFlag::PromotionRook:
+            case MoveFlag::PromotionCaptureRook:
                 promotedPiece = Piece::BlackRook;
                 break;
 
@@ -744,39 +851,46 @@ sideToMove = undoInfo.sideToMove;
     clearPieceMoves(move.from);
     clearPieceMoves(move.to);
 
-    updateZobristKey();
-
-    updateOccupancy();
+    zobristKey = undoInfo.zobristKey;
 }
 
 void Board::makeNullMove(
     UndoInfo& undoInfo)
 {
+    undoInfo.zobristKey = zobristKey;
     undoInfo.castlingRights = castlingRights;
     undoInfo.enPassantSquare = enPassantSquare;
     undoInfo.sideToMove = sideToMove;
-undoInfo.halfmoveClock = halfmoveClock;
+    undoInfo.halfmoveClock = halfmoveClock;
     undoInfo.wasNullMove = true;
 
+    // XOR out old EP if valid
+    if (Zobrist::isEnPassantValid(*this, enPassantSquare))
+    {
+        zobristKey ^= Zobrist::getEnPassantKey(enPassantSquare);
+    }
+
     enPassantSquare = Square::None;
+
+    // XOR side key for current side, then for new side
+    zobristKey ^= Zobrist::getSideKey(sideToMove);
 
     sideToMove =
         (sideToMove == ChessColor::White)
         ? ChessColor::Black
         : ChessColor::White;
 
-    updateZobristKey();
+    zobristKey ^= Zobrist::getSideKey(sideToMove);
 }
 
 void Board::undoNullMove(
     const UndoInfo& undoInfo)
 {
+    zobristKey = undoInfo.zobristKey;
     castlingRights = undoInfo.castlingRights;
     enPassantSquare = undoInfo.enPassantSquare;
     sideToMove = undoInfo.sideToMove;
-halfmoveClock = undoInfo.halfmoveClock;
-
-    updateZobristKey();
+    halfmoveClock = undoInfo.halfmoveClock;
 }
 
 Piece Board::pieceAt(Square square) const

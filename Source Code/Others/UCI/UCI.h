@@ -26,6 +26,7 @@ private:
     // "stop") bez blokowania głównej pętli UCI.
     static std::thread searchThread;
     static std::atomic<bool> searchActive;
+    static std::atomic<bool> searchStarted;
 
     static Board board;
 
@@ -47,6 +48,9 @@ private:
 
     static void commandDebug(
     const std::vector<std::string>& tokens);
+
+    static void commandBook(
+        const std::vector<std::string>& tokens);
 
     static void commandRegister(
         const std::vector<std::string>& tokens);

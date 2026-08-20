@@ -3,7 +3,7 @@
 #include "Foundation/Board.h"
 #include "Foundation/Piece.h"
 
-namespace
+namespace Zobrist
 {
 // Prekomputowane tablice Zobrist
 // zobristPiece[piece][square]
@@ -61,10 +61,77 @@ void initializeTables()
 
     initialized = true;
 }
+
+bool isEnPassantValid(const Board& board, Square epSquare)
+{
+    if (epSquare == Square::None)
+    {
+        return false;
+    }
+
+    const int epFile = static_cast<int>(epSquare) % 8;
+    const int epRank = static_cast<int>(epSquare) / 8;
+
+    const ChessColor side = board.getSideToMove();
+    const Piece capturePawn =
+        (side == ChessColor::White)
+            ? Piece::WhitePawn
+            : Piece::BlackPawn;
+
+    const int captureRank =
+        (side == ChessColor::White)
+            ? epRank - 1
+            : epRank + 1;
+
+    if (captureRank < 0 || captureRank >= 8)
+    {
+        return false;
+    }
+
+    for (int fileDelta : { -1, 1 })
+    {
+        const int captureFile = epFile + fileDelta;
+        if (captureFile < 0 || captureFile >= 8)
+        {
+            continue;
+        }
+
+        const Square captureSquare =
+            static_cast<Square>(captureRank * 8 + captureFile);
+
+        if (board.pieceAt(captureSquare) == capturePawn)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
-namespace Zobrist
+uint64_t getPieceKey(Piece piece, Square square)
 {
+    initializeTables();
+    return zobristPiece[static_cast<int>(piece)][static_cast<int>(square)];
+}
+
+uint64_t getSideKey(ChessColor side)
+{
+    initializeTables();
+    return zobristSide[static_cast<int>(side)];
+}
+
+uint64_t getCastlingKey(uint8_t rights)
+{
+    initializeTables();
+    return zobristCastling[rights];
+}
+
+uint64_t getEnPassantKey(Square square)
+{
+    initializeTables();
+    return zobristEnPassant[static_cast<int>(square)];
+}
+
 uint64_t calculateHash(const Board& board)
 {
     initializeTables();
@@ -98,52 +165,9 @@ uint64_t calculateHash(const Board& board)
     // Table (ta sama pozycja z "pustym" a "nieużywalnym" EP traktowana
     // byłaby jako inna).
     const Square ep = board.getEnPassantSquare();
-    if (ep != Square::None)
+    if (isEnPassantValid(board, ep))
     {
-        const int epFile = static_cast<int>(ep) % 8;
-        const int epRank = static_cast<int>(ep) / 8;
-
-        // Strona do ruchu jest tą, która może wykonać en passant.
-        const ChessColor side = board.getSideToMove();
-        const Piece capturePawn =
-            (side == ChessColor::White)
-                ? Piece::WhitePawn
-                : Piece::BlackPawn;
-
-        // Pion bijący stoi na tej samej randze co pion, który wykonał
-        // podwójny skok, czyli o jedną randze wyżej/niżej od pola EP.
-        const int captureRank =
-            (side == ChessColor::White)
-                ? epRank - 1
-                : epRank + 1;
-
-        bool capturePossible = false;
-
-        if (captureRank >= 0 && captureRank < 8)
-        {
-            for (int fileDelta : { -1, 1 })
-            {
-                const int captureFile = epFile + fileDelta;
-                if (captureFile < 0 || captureFile >= 8)
-                {
-                    continue;
-                }
-
-                const Square captureSquare =
-                    static_cast<Square>(captureRank * 8 + captureFile);
-
-                if (board.pieceAt(captureSquare) == capturePawn)
-                {
-                    capturePossible = true;
-                    break;
-                }
-            }
-        }
-
-        if (capturePossible)
-        {
-            hash ^= zobristEnPassant[static_cast<int>(ep)];
-        }
+        hash ^= zobristEnPassant[static_cast<int>(ep)];
     }
 
     return hash;

@@ -51,7 +51,7 @@ void TimeManager::reset()
 
     nodesSearched = 0;
 
-mateSearch = 0;
+    mateSearch = 0;
 
     movesToGo = 30;
 
@@ -135,7 +135,7 @@ bool TimeManager::shouldStop()
     // Limit liczby węzłów (go nodes N) - sprawdzany zawsze (tani).
     if (nodeLimit > 0 && nodesSearched >= nodeLimit)
     {
-        stopRequested.store(true, std::memory_order_relaxed); // zatrzaśnij — dalsze wyszukiwanie ma się przerwać
+        stopRequested.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -160,7 +160,7 @@ bool TimeManager::shouldStop()
     {
         if (elapsed >= moveTime)
         {
-            stopRequested.store(true, std::memory_order_relaxed); // zatrzaśnij sygnał zatrzymania
+            stopRequested.store(true, std::memory_order_relaxed);
             return true;
         }
     }
@@ -168,7 +168,7 @@ bool TimeManager::shouldStop()
     // Sprawdź limit czasu na ruch (dla kontroli czasu wtime/btime)
     if (timeLimit > 0 && elapsed >= timeLimit)
     {
-        stopRequested.store(true, std::memory_order_relaxed); // zatrzaśnij sygnał zatrzymania
+        stopRequested.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -353,7 +353,9 @@ else
 
     // Im więcej możliwych ruchów, tym szersze drzewo -> płytsza głębokość
     MoveList legalMoves;
-    MoveGenerator::generateMoves(board, legalMoves);
+    const MoveValidator::CheckInfo pseudoInfo{};
+    MoveGenerator::generateMoves(board, legalMoves, pseudoInfo);
+    MoveValidator::filterLegalMoves(board, legalMoves);
 
     int moveCount = static_cast<int>(legalMoves.size());
     if (moveCount <= 5)

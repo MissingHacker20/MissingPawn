@@ -144,6 +144,8 @@ Move Search::findBestMove(Board& board, int depth)
     TimeManager::resetNodeCount();
 
     Move bestMove;
+    Move completedBestMove;
+    int completedDepth = 0;
 
     //--------------------------------------------------
     // Inicjalizacja śledzenia powtórzeń na ścieżce searchu.
@@ -163,8 +165,10 @@ Move Search::findBestMove(Board& board, int depth)
     //--------------------------------------------------
     // Szybka ścieżka: wymuszenie ruchu / mat w 1
     //--------------------------------------------------
+    
     MoveList rootMoves;
-    MoveGenerator::generateMoves(board, rootMoves);
+    const MoveValidator::CheckInfo pseudoInfo{};
+    MoveGenerator::generateMoves(board, rootMoves, pseudoInfo);
     MoveValidator::filterLegalMoves(board, rootMoves);
 
     if (rootMoves.size() == 0)
@@ -182,6 +186,10 @@ Move Search::findBestMove(Board& board, int depth)
         return bestMove;
     }
 
+    // Bez pełnej iteracji (np. przy bardzo krótkim movetime) zwracamy
+    // przynajmniej legalny ruch, nigdy pusty ani częściowo oceniony wariant.
+    bestMove = rootMoves[0];
+
     // Mat w 1: jeśli któryś ruch daje pozycję bez legalnych ruchów
     // przeciwnika w szachu, zagraj go natychmiast.
     for (int i = 0; i < rootMoves.size(); ++i)
@@ -191,7 +199,7 @@ Move Search::findBestMove(Board& board, int depth)
         board.makeMove(move, undoInfo);
 
         MoveList oppMoves;
-        MoveGenerator::generateMoves(board, oppMoves);
+        MoveGenerator::generateMoves(board, oppMoves, pseudoInfo);
         MoveValidator::filterLegalMoves(board, oppMoves);
         const bool oppInCheck =
             MoveValidator::isKingInCheck(board, board.getSideToMove());
@@ -221,9 +229,8 @@ Move Search::findBestMove(Board& board, int depth)
         }
 
         MoveList moves;
-        MoveGenerator::generateMoves(board, moves);
-
-        MoveValidator::updatePieceBitboards(board, moves);
+        MoveGenerator::generateMoves(board, moves, pseudoInfo);
+        MoveValidator::filterLegalMoves(board, moves);
 
         // Cache tactical evaluation for move ordering (hanging piece penalty)
         int tacticalEval = MoveValidator::evaluateTactics(board);
@@ -294,7 +301,7 @@ Move Search::findBestMove(Board& board, int depth)
             alpha = std::max(alpha, score);
         }
 
-// Jeśli czas minął, zakończ iteracyjne pogłębianie
+        // Jeśli czas minął, zakończ iteracyjne pogłębianie
         if (shouldStopSearch())
         {
             break;
@@ -311,6 +318,9 @@ Move Search::findBestMove(Board& board, int depth)
                 completedPvTable[i][j] = pvTable[i][j];
             }
         }
+
+        completedBestMove = bestMove;
+        completedDepth = currentDepth;
 
         //--------------------------------------------------
         // UCI info output using completed PV table
@@ -354,7 +364,15 @@ Move Search::findBestMove(Board& board, int depth)
         std::cout << std::endl;
     }
 
-// Store in history (używamy głębokości ostatniej ukończonej iteracji)
+    // Wynik przerwanej iteracji nie jest wiarygodny. Zachowujemy wyłącznie
+    // ruch z ostatniej w całości przeanalizowanej głębokości.
+    if (completedBestMove.from != Square::None)
+    {
+        bestMove = completedBestMove;
+        currentIterativeDepth = completedDepth;
+    }
+
+    // Store in history (używamy głębokości ostatniej ukończonej iteracji)
     if (bestMove.from != Square::None)
     {
         HistoryHeuristic::add(
@@ -386,17 +404,18 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
 
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+    const MoveValidator::CheckInfo pseudoInfo{};
 
     MoveList moves;
     if (inCheck)
     {
-        MoveGenerator::generateMoves(board, moves);
+        MoveGenerator::generateMoves(board, moves, pseudoInfo);
     }
     else
     {
-        MoveGenerator::generateCaptures(board, moves);
+        MoveGenerator::generateCaptures(board, moves, pseudoInfo);
     }
-MoveValidator::filterLegalMoves(board, moves);
+    MoveValidator::filterLegalMoves(board, moves);
     MoveValidator::updatePieceBitboards(board, moves);
 
     // Cache tactical evaluation for delta/SEE pruning and move ordering reuse
@@ -442,12 +461,12 @@ MoveValidator::filterLegalMoves(board, moves);
 
     for (int i = 0; i < moves.size(); i++)
     {
-        const Move& move = moves[i];
-
         if (shouldStopSearch())
         {
             return alpha;
         }
+
+        const Move& move = moves[i];
 
         // Delta pruning: depth-dependent margins, protect rooks/queens
         int pieceValue = 0;
@@ -497,7 +516,7 @@ MoveValidator::filterLegalMoves(board, moves);
             if (victimValue >= 500 || (seeScore > -200 && seeScore < 200))
             {
                 MoveList oppMoves;
-                MoveGenerator::generateCaptures(board, oppMoves);
+                MoveGenerator::generateCaptures(board, oppMoves, pseudoInfo);
                 MoveValidator::filterLegalMoves(board, oppMoves);
                 for (int j = 0; j < oppMoves.size(); ++j)
                 {
@@ -554,9 +573,11 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     //--------------------------------------------------
     // Generate moves once (reused for terminal detection and search)
     //--------------------------------------------------
-
+    
+    const MoveValidator::CheckInfo pseudoInfo{};
+    
     MoveList moves;
-    MoveGenerator::generateMoves(board, moves);
+    MoveGenerator::generateMoves(board, moves, pseudoInfo);
     MoveValidator::filterLegalMoves(board, moves);
     MoveValidator::updatePieceBitboards(board, moves);
 
@@ -579,7 +600,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         return score;
     }
 
-//--------------------------------------------------
+    //--------------------------------------------------
     // Null move pruning
     //--------------------------------------------------
 
@@ -601,13 +622,13 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
-     MoveOrdering::sortMoves(board, moves, depth, ply, Move(), tacticalEval);
+    MoveOrdering::sortMoves(board, moves, depth, ply, Move(), tacticalEval);
 
-     Move bestMove;
-     int bestScore = -Infinity;
- 
-     for (int index = 0; index < moves.size(); ++index)
-     {
+    Move bestMove;
+    int bestScore = -Infinity;
+
+    for (int index = 0; index < moves.size(); ++index)
+    {
         // Jeśli czas minął, przerwij natychmiast — nie przeszukuj już
         // pozostałych ruchów na tym poziomie (szybkie zatrzymanie).
         if (shouldStopSearch())
@@ -734,9 +755,9 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
-     return bestScore;
- }
- 
+    return bestScore;
+}
+
 int Search::terminalScore(
     const Board& board,
     const MoveList& moves,

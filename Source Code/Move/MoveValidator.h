@@ -2,31 +2,26 @@
 
 #include "Board.h"
 #include "MoveList.h"
+#include "Foundation/Bitboard.h"
 
 class MoveValidator
 {
 public:
 
-    static void filterLegalMoves(
-        Board& board,
-        MoveList& moveList
-    );
-    
-    static bool isMoveLegal(
-        Board& board,
-        const Move& move
-    );
+    struct CheckInfo
+    {
+        Bitboard checkers = 0;           // Wszystkie figury dające szach
+        Bitboard pinned = 0;             // Nasze figury przybite do króla
+        Bitboard pinRays[64];            // Dla każdej przybitej figury: pola na których może się ruszyć
+        Square kingSquare = Square::None;
+        bool inCheck = false;
+        bool doubleCheck = false;
+        Bitboard enemyAttacks = 0;       // Wszystkie pola atakowane przez przeciwnika
+    };
 
-    static bool isKingInCheck(
-        const Board& board,
-        ChessColor side
-    );
-
-static bool isSquareAttacked(
-        const Board& board,
-        Square square,
-        ChessColor attacker
-    );
+    // Oblicza informacje o szachach i przyspieszaniach dla danej strony.
+    // Zwraca strukturę CheckInfo z gotowymi maskami.
+    static CheckInfo computeCheckInfo(const Board& board, ChessColor side);
 
     // Ocena taktyczna (SEE / wiszące figury) dla całej planszy.
     // Zwraca wynik netto (biały - czarny): kara za "wiszące" figury
@@ -47,9 +42,25 @@ static bool isSquareAttacked(
         Board& board,
         const MoveList& legalMoves);
 
-private:
+    // Legacy - kept for debug/validation only
+    static bool isKingInCheck(
+        const Board& board,
+        ChessColor side
+    );
 
-    static ChessColor oppositeColor(ChessColor color);
+    static bool isSquareAttacked(
+        const Board& board,
+        Square square,
+        ChessColor attacker
+    );
+
+static ChessColor oppositeColor(ChessColor color);
+
+// Legacy functions - kept for compatibility but should not be used in new code
+static void filterLegalMoves(Board& board, MoveList& moveList);
+static bool isMoveLegal(Board& board, const Move& move);
+
+private:
 
     static Square findKing(
         const Board& board,
@@ -58,7 +69,7 @@ private:
 
     static int pieceValue(Piece piece);
 
-// Zwraca najtańszą figurę danego koloru, która atakuje pole.
+ // Zwraca najtańszą figurę danego koloru, która atakuje pole.
     // Zapisuje jej pole w `fromSquare`. Zwraca Piece::None, jeśli nie ma.
     static Piece leastValuableAttacker(
         const Board& board,

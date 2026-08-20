@@ -16,6 +16,7 @@ struct UndoInfo
     int halfmoveClock = 0;
     int fullmoveNumber = 0;
     bool wasNullMove = false;
+    uint64_t zobristKey = 0;
 };
 
 enum class MoveFlag

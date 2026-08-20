@@ -7,12 +7,6 @@
 #include "Foundation/Board.h"
 #include "Move/AttackTables.h"
 
-namespace
-{
-// Buduje bitboard wszystkich pól atakowanych przez stronę `attacker`.
-// Jest dokładnie równoważny zbiorowi pól, dla których pierwotna funkcja
-// isSquareUnderAttack zwracałaby true, ale liczy ataki tylko raz dla całej
-// planszy zamiast osobno dla każdego pola (duże przyspieszenie).
 Bitboard computeAttackBoard(const Board& board, ChessColor attacker)
 {
     const Piece pawn   = (attacker == ChessColor::White) ? Piece::WhitePawn   : Piece::BlackPawn;
@@ -100,6 +94,14 @@ Bitboard computeAttackBoard(const Board& board, ChessColor attacker)
 
     return attacked;
 }
+
+
+namespace
+{
+// Buduje bitboard wszystkich pól atakowanych przez stronę `attacker`.
+// Jest dokładnie równoważny zbiorowi pól, dla których pierwotna funkcja
+// isSquareUnderAttack zwracałaby true, ale liczy ataki tylko raz dla całej
+// planszy zamiast osobno dla każdego pola (duże przyspieszenie).
 
 int countKingZoneAttacks(const Board& board, ChessColor color)
 {

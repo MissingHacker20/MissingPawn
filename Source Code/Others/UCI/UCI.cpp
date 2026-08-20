@@ -10,11 +10,14 @@
 #include "Others/UCI/UCIPositionParser.h"
 #include "Others/UCI/UCIOptionParser.h"
 #include "OpeningBooks/OpeningBooks.h"
+#include "Move/AttackTables.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iostream>
 #include <sstream>
+#include <thread>
 
 Board UCI::board;
 
@@ -22,9 +25,11 @@ bool UCI::debugMode = false;
 
 std::thread UCI::searchThread;
 std::atomic<bool> UCI::searchActive{false};
+std::atomic<bool> UCI::searchStarted{false};
 
 // Globalna książka otwarć
 static std::vector<BookEntry> g_openingBook;
+static bool g_openingBookEnabled = true;
 
 bool UCI::executeCommand(
     const std::string& command)
@@ -135,6 +140,12 @@ bool UCI::executeCommand(
         return true;
     }
 
+    if (commandName == "book")
+    {
+        commandBook(tokens);
+        return true;
+    }
+
     if (commandName == "ponderhit")
     {
         commandPonderHit();
@@ -149,7 +160,7 @@ bool UCI::executeCommand(
 
     if (commandName == "help")
     {
-        std::cout << "info string Supported UCI commands: uci, isready, position, go, stop, ucinewgame, setoption, debug, ponderhit, register, quit" << std::endl;
+        std::cout << "info string Supported UCI commands: uci, isready, position, go, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
         return true;
     }
 
@@ -179,7 +190,8 @@ void UCI::run()
 
     // Na koniec upewniamy się, że wątek searchu został dołączony
     // (np. przy zamknięciu wejścia / EOF zamiast jawnego "quit").
-    TimeManager::stop();
+    // Nie wywołujemy stop() - niech search się zakończy naturalnie
+    // po upływie limitu czasu.
     if (searchThread.joinable())
     {
         searchThread.join();
@@ -188,8 +200,8 @@ void UCI::run()
 
 void UCI::commandUCI()
 {
-    std::cout << "id name MissingPawn v1" << std::endl;
-    std::cout << "id author Missing Player" << std::endl;
+    std::cout << "id name MissingPawn v2" << std::endl;
+    std::cout << "id author Kacper Wieczorek" << std::endl;
     std::cout << "option name Hash type spin default 64 min 1 max 4096" << std::endl;
     std::cout << "option name Ponder type check default false" << std::endl;
     std::cout << "uciok" << std::endl;
@@ -208,9 +220,6 @@ void UCI::commandQuit()
     {
         searchThread.join();
     }
-
-    std::cout << "bye" << std::endl;
-    std::cout.flush();
 }
 
 void UCI::commandGo(
@@ -223,7 +232,7 @@ void UCI::commandGo(
     // Sprawdź książkę otwarć
     //--------------------------------------------------
 
-    if (hasBookMove(g_openingBook, board.getZobristKey()))
+    if (g_openingBookEnabled && hasBookMove(g_openingBook, board.getZobristKey()))
     {
         Move bookMove = getBookMove(g_openingBook, board);
         if (bookMove.from != Square::None)
@@ -359,11 +368,20 @@ void UCI::commandGo(
     }
 
     searchActive = true;
+    searchStarted = false;
     searchThread = std::thread([depth]()
     {
+        UCI::searchStarted = true;
         Search::findBestMove(UCI::board, depth);
-        searchActive = false;
+        UCI::searchActive = false;
     });
+
+    // Poczekaj aż wątek searchu faktycznie się uruchomi (ustawi searchStarted),
+    // by uniknąć wyścigu z komendami "stop"/"quit" przychodzącymi natychmiast po "go".
+    while (!UCI::searchStarted.load(std::memory_order_acquire))
+    {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
 }
 
 void UCI::commandStop()
@@ -451,6 +469,36 @@ void UCI::commandDebug(
               << std::endl;
 }
 
+void UCI::commandBook(
+    const std::vector<std::string>& tokens)
+{
+    if (tokens.size() != 2)
+    {
+        std::cout << "info string Usage: book on|off" << std::endl;
+        return;
+    }
+
+    std::string state = tokens[1];
+    std::transform(state.begin(), state.end(), state.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (state == "on")
+    {
+        g_openingBookEnabled = true;
+        std::cout << "info string Opening book enabled." << std::endl;
+        return;
+    }
+
+    if (state == "off")
+    {
+        g_openingBookEnabled = false;
+        std::cout << "info string Opening book disabled." << std::endl;
+        return;
+    }
+
+    std::cout << "info string Usage: book on|off" << std::endl;
+}
+
 bool UCI::isDebugMode()
 {
     return debugMode;
@@ -469,3 +517,4 @@ void UCI::commandPonderHit()
 
     std::cout << "info string PonderHit received." << std::endl;
 }
+

@@ -1,20 +1,17 @@
 # Changelog
 
 ## MissingPawn v1
-- bitboardy
 - delta pruning w quiescence
 - FEN,
-- historię gry
-- historia powtórzeń (obsługa powtórzeń)
+- game history
 - history heuristic
 - iterative deepening
 - killer moves
 - LMR
 - makeMove / undoMove
-- Magic Bitboards
+- magic bitboards
 - move ordering
 - null move
-- null-move pruning
 - occupancy
 - piece evaluation
 - PV
@@ -22,5 +19,8 @@
 - quiescence search
 - SEE
 - time management
-- Zobrist hashing,
+- zobrist hashing,
 - halfmove clock
+
+## MissingPawn v2
+- updated MoveGenerator and engine speed.

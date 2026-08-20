@@ -112,9 +112,8 @@ static uint64_t nodeLimit;
 // Limit czasu na ten ruch (w ms) na podstawie kontroli czasu
     static int timeLimit;
 
-    // Licznik węzłów do rzadkiego sprawdzania zegara (wydajność).
-    // Zamiast wołać steady_clock::now() w każdym węźle, sprawdzamy czas
-    // co N węzłów — znacząco redukuje narzut zegara w wyszukiwaniu.
-    static constexpr int TimeCheckInterval = 128;
+    // Czas sprawdzamy w każdym węźle. Dzięki temu movetime i kontrola
+    // czasu nie są przekraczane przez długi fragment drzewa.
+    static constexpr int TimeCheckInterval = 1;
     static int timeCheckCounter;
 };
