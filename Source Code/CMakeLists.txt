@@ -66,3 +66,12 @@ set_target_properties(MissingPawn PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
+
+# MissingPawn.exe nie wymaga środowiska MinGW ani jego plików DLL.
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(MissingPawn PRIVATE
+        -static
+        -static-libgcc
+        -static-libstdc++
+    )
+endif()
