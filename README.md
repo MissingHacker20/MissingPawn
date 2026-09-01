@@ -39,7 +39,8 @@ The engine automatically switches to UCI mode after receiving the `uci` command.
 
 ## Strength
 
-MissingPawn includes built-in opening book knowledge and iterative-deepening search with time management. Its strength is 792 Elo.
+MissingPawn includes built-in opening book knowledge and iterative-deepening search with time management.
+The Elo rating is stored in Releases.
 
 ## License
 

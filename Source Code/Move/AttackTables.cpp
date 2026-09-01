@@ -174,18 +174,20 @@ void generatePawnTable(std::array<Bitboard, 64>& whitePawnAttackTable, std::arra
         int f = sq % 8;
         int r = sq / 8;
 
-        // Białe pionki na polu sq atakują:
-        // - sq + 7 (lewy skos, jeśli nie w kolumnie A i nie na 8. rzędzie)
-        // - sq + 9 (prawy skos, jeśli nie w kolumnie H i nie na 8. rzędzie)
+        // Białe pionki na polu sq atakują pola sq + 7 i sq + 9 (rząd wyżej).
+        // sq + 7 istnieje tylko gdy sq nie leży w kolumnie A (f > 0),
+        // sq + 9 tylko gdy nie leży w kolumnie H (f < 7); warunek r < 7
+        // wyklucza 8. rząd, z którego pionki nie atakują.
         if (r < 7)
         {
             if (f > 0) setBit(whitePawnAttackTable[sq], static_cast<Square>(sq + 7));
             if (f < 7) setBit(whitePawnAttackTable[sq], static_cast<Square>(sq + 9));
         }
 
-        // Czarne pionki na polu sq atakują:
-        // - sq - 9 (lewy skos, jeśli nie w kolumnie A i nie na 1. rzędzie)
-        // - sq - 7 (prawy skos, jeśli nie w kolumnie H i nie na 1. rzędzie)
+        // Czarne pionki na polu sq atakują pola sq - 9 i sq - 7 (rząd niżej).
+        // sq - 9 istnieje tylko gdy sq nie leży w kolumnie A (f > 0),
+        // sq - 7 tylko gdy nie leży w kolumnie H (f < 7); warunek r > 0
+        // wyklucza 1. rząd, z którego pionki nie atakują.
         if (r > 0)
         {
             if (f > 0) setBit(blackPawnAttackTable[sq], static_cast<Square>(sq - 9));
@@ -253,37 +255,39 @@ inline uint64_t slidingIndex(Bitboard occupancy, Bitboard mask)
     return packBits(occupancy, mask);
 }
 
+// Enumerate every occupancy consistent with the mask: for a mask of n bits
+// this yields 2^n boards where each masked bit is either set or clear.
+std::vector<Bitboard> enumerateOccupancies(Bitboard mask)
+{
+    std::vector<Bitboard> occs;
+    int bits = std::popcount(mask);
+    int combos = 1 << bits;
+    occs.reserve(combos);
+    for (int i = 0; i < combos; ++i)
+    {
+        Bitboard occ = 0;
+        int bit = 0;
+        uint64_t m = mask;
+        while (m)
+        {
+            int b = std::countr_zero(m);
+            if (i & (1 << bit)) occ |= (1ULL << b);
+            ++bit;
+            m &= m - 1;
+        }
+        occs.push_back(occ);
+    }
+    return occs;
+}
+
 void fillSlidingTables()
 {
     // Precompute every sliding-piece attack set, indexed by the compressed
     // occupancy (PEXT on BMI2, otherwise packBits). This yields an O(1) lookup
     // with no magic-number search and no collisions.
-    auto enumerate = [](Bitboard mask) -> std::vector<Bitboard>
-    {
-        std::vector<Bitboard> occs;
-        int bits = std::popcount(mask);
-        int combos = 1 << bits;
-        occs.reserve(combos);
-        for (int i = 0; i < combos; ++i)
-        {
-            Bitboard occ = 0;
-            int bit = 0;
-            uint64_t m = mask;
-            while (m)
-            {
-                int b = std::countr_zero(m);
-                if (i & (1 << bit)) occ |= (1ULL << b);
-                ++bit;
-                m &= m - 1;
-            }
-            occs.push_back(occ);
-        }
-        return occs;
-    };
-
     for (int sq = 0; sq < 64; ++sq)
     {
-        auto bishopOccs = enumerate(bishopMasks[sq]);
+        auto bishopOccs = enumerateOccupancies(bishopMasks[sq]);
         size_t bSize = static_cast<size_t>(1) << std::popcount(bishopMasks[sq]);
         bishopOffsets[sq] = bishopAttackTable.size();
         bishopAttackTable.resize(bishopAttackTable.size() + bSize, 0);
@@ -293,7 +297,7 @@ void fillSlidingTables()
             bishopAttackTable[bishopOffsets[sq] + index] = referenceBishopAttacks(sq, occ);
         }
 
-        auto rookOccs = enumerate(rookMasks[sq]);
+        auto rookOccs = enumerateOccupancies(rookMasks[sq]);
         size_t rSize = static_cast<size_t>(1) << std::popcount(rookMasks[sq]);
         rookOffsets[sq] = rookAttackTable.size();
         rookAttackTable.resize(rookAttackTable.size() + rSize, 0);
@@ -332,6 +336,7 @@ void initAttackTables()
 
 Bitboard bishopAttacks(Square square, Bitboard occupancy)
 {
+    if (!initialized) initAttackTables();
     int s = static_cast<int>(square);
     Bitboard masked = occupancy & bishopMasks[s];
     uint64_t index = slidingIndex(masked, bishopMasks[s]);
@@ -340,6 +345,7 @@ Bitboard bishopAttacks(Square square, Bitboard occupancy)
 
 Bitboard rookAttacks(Square square, Bitboard occupancy)
 {
+    if (!initialized) initAttackTables();
     int s = static_cast<int>(square);
     Bitboard masked = occupancy & rookMasks[s];
     uint64_t index = slidingIndex(masked, rookMasks[s]);
@@ -353,32 +359,9 @@ Bitboard queenAttacks(Square square, Bitboard occupancy)
 
 bool verifyAttackTables()
 {
-    auto enumerate = [](Bitboard mask) -> std::vector<Bitboard>
-    {
-        std::vector<Bitboard> occs;
-        int bits = std::popcount(mask);
-        int combos = 1 << bits;
-        occs.reserve(combos);
-        for (int i = 0; i < combos; ++i)
-        {
-            Bitboard occ = 0;
-            int bit = 0;
-            uint64_t m = mask;
-            while (m)
-            {
-                int b = std::countr_zero(m);
-                if (i & (1 << bit)) occ |= (1ULL << b);
-                ++bit;
-                m &= m - 1;
-            }
-            occs.push_back(occ);
-        }
-        return occs;
-    };
-
     for (int sq = 0; sq < 64; ++sq)
     {
-        auto occs = enumerate(bishopMasks[sq]);
+        auto occs = enumerateOccupancies(bishopMasks[sq]);
         for (const auto& occ : occs)
         {
             if (bishopAttacks(static_cast<Square>(sq), occ) != referenceBishopAttacks(sq, occ))
@@ -387,7 +370,7 @@ bool verifyAttackTables()
                 return false;
             }
         }
-        auto roccs = enumerate(rookMasks[sq]);
+        auto roccs = enumerateOccupancies(rookMasks[sq]);
         for (const auto& occ : roccs)
         {
             if (rookAttacks(static_cast<Square>(sq), occ) != referenceRookAttacks(sq, occ))

@@ -2,7 +2,7 @@
 
 ## MissingPawn v1
 - delta pruning w quiescence
-- FEN,
+- FEN
 - game history
 - history heuristic
 - iterative deepening
@@ -19,8 +19,11 @@
 - quiescence search
 - SEE
 - time management
-- zobrist hashing,
+- zobrist hashing
 - halfmove clock
 
 ## MissingPawn v2
-- updated MoveGenerator and engine speed.
+- updated MoveGenerator
+- update engine speed
+- new evaluator bitboards
+- evaluator update

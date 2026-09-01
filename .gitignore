@@ -12,5 +12,6 @@ build/
 *.opensdf
 *.user
 *.ncb
+*.bat
+*.json
 TODO.md
-TODO.txt

@@ -5,16 +5,16 @@
 #include <cmath>
 #include <vector>
 
+#include "Foundation/Bitboard.h"
+#include "Foundation/Bitboards.h"
+
 namespace
 {
-inline Piece pawnFor(ChessColor color)
-{
-    return color == ChessColor::White ? Piece::WhitePawn : Piece::BlackPawn;
-}
+constexpr Bitboard fileA = 0x0101010101010101ULL;
 
-inline Piece enemyPawnFor(ChessColor color)
+inline Bitboard fileMaskBB(int file)
 {
-    return color == ChessColor::White ? Piece::BlackPawn : Piece::WhitePawn;
+    return fileA << file;
 }
 
 inline int pawnProgress(ChessColor color, Square square)
@@ -33,57 +33,58 @@ inline int rankOf(Square square)
     return static_cast<int>(square) / 8;
 }
 
-bool isPassedPawn(const Board& board, ChessColor color, Square square)
+// Maski pól przed pionkiem (w kierunku promocji) na liniach file-1..file+1
+inline Bitboard forwardMask(ChessColor color, int file, int rank)
 {
-    const int file = fileOf(square);
-    const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
-    const Piece enemyPawn = enemyPawnFor(color);
+    Bitboard mask = 0;
+    const int step = (color == ChessColor::White) ? 1 : -1;
 
-    for (int targetRank = rank + step; targetRank >= 0 && targetRank < 8; targetRank += step)
+    for (int r = rank + step; r >= 0 && r < 8; r += step)
     {
-        for (int targetFile = file - 1; targetFile <= file + 1; ++targetFile)
-        {
-            if (targetFile >= 0 && targetFile < 8)
-            {
-                if (board.pieceAt(static_cast<Square>(targetRank * 8 + targetFile)) == enemyPawn)
-                {
-                    return false;
-                }
-            }
-        }
+        if (file > 0)     mask |= 1ULL << (r * 8 + file - 1);
+        mask |= 1ULL << (r * 8 + file);
+        if (file < 7)     mask |= 1ULL << (r * 8 + file + 1);
     }
-    return true;
+
+    return mask;
 }
 
-bool isCandidatePassedPawn(const Board& board, ChessColor color, Square square)
+// Pionki przeciwnika przed podanym pionkiem (na liniach bocznych i własnej)
+inline Bitboard enemyPawnsAhead(const Bitboards& bitboards, ChessColor color, Square square)
 {
-    if (isPassedPawn(board, color, square)) return false;
-
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
-    const Piece enemyPawn = enemyPawnFor(color);
-    const Piece ownPawn = pawnFor(color);
+    return bitboards.pawns[1 - Bitboards::indexOf(color)] & forwardMask(color, file, rank);
+}
+
+bool isPassedPawn(const Bitboards& bitboards, ChessColor color, Square square)
+{
+    return enemyPawnsAhead(bitboards, color, square) == 0;
+}
+
+bool isCandidatePassedPawn(const Bitboards& bitboards, ChessColor color, Square square)
+{
+    if (isPassedPawn(bitboards, color, square)) return false;
+
+    const int idx = Bitboards::indexOf(color);
+    const int file = fileOf(square);
+    const int rank = rankOf(square);
+    const int step = (color == ChessColor::White) ? 1 : -1;
+
+    const Bitboard ownPawns = bitboards.pawns[idx];
+    const Bitboard enemyPawns = bitboards.pawns[1 - idx];
 
     int enemyBlockers = 0;
     int friendlyHelpers = 0;
 
-    for (int targetFile = file - 1; targetFile <= file + 1; ++targetFile)
+    for (int f = std::max(0, file - 1); f <= std::min(7, file + 1); ++f)
     {
-        if (targetFile < 0 || targetFile > 7) continue;
-
+        // Blokujący pionek/przedmiot przeciwnika przed pionkiem na linii f
         bool hasEnemyBlocker = false;
-        for (int targetRank = rank + step; targetRank >= 0 && targetRank < 8; targetRank += step)
+        for (int r = rank + step; r >= 0 && r < 8; r += step)
         {
-            const Square sq = static_cast<Square>(targetRank * 8 + targetFile);
-            const Piece p = board.pieceAt(sq);
-            if (p == enemyPawn)
-            {
-                hasEnemyBlocker = true;
-                break;
-            }
-            if (p != Piece::None && p != ownPawn)
+            if (getBit(enemyPawns, static_cast<Square>(r * 8 + f)) ||
+                getBit(bitboards.occupied[1 - idx] & ~enemyPawns, static_cast<Square>(r * 8 + f)))
             {
                 hasEnemyBlocker = true;
                 break;
@@ -92,21 +93,17 @@ bool isCandidatePassedPawn(const Board& board, ChessColor color, Square square)
 
         if (hasEnemyBlocker) enemyBlockers++;
 
-        if (targetFile == file) friendlyHelpers++;
+        if (f == file) friendlyHelpers++;
 
-        for (int targetRank = 0; targetRank < 8; ++targetRank)
-        {
-            const Square sq = static_cast<Square>(targetRank * 8 + targetFile);
-            if (board.pieceAt(sq) == ownPawn) friendlyHelpers++;
-        }
+        friendlyHelpers += countBits(ownPawns & fileMaskBB(f));
     }
 
     return friendlyHelpers > enemyBlockers;
 }
 
-bool isPawnProtected(const Board& board, ChessColor color, Square square)
+bool isPawnProtected(const Bitboards& bitboards, ChessColor color, Square square)
 {
-    const Piece ownPawn = pawnFor(color);
+    const int idx = Bitboards::indexOf(color);
     const int file = fileOf(square);
     const int rank = rankOf(square);
     const int protectRank = rank + ((color == ChessColor::White) ? -1 : 1);
@@ -115,7 +112,8 @@ bool isPawnProtected(const Board& board, ChessColor color, Square square)
 
     for (int f = file - 1; f <= file + 1; f += 2)
     {
-        if (f >= 0 && f < 8 && board.pieceAt(static_cast<Square>(protectRank * 8 + f)) == ownPawn)
+        if (f >= 0 && f < 8 &&
+            getBit(bitboards.pawns[idx], static_cast<Square>(protectRank * 8 + f)))
         {
             return true;
         }
@@ -123,8 +121,10 @@ bool isPawnProtected(const Board& board, ChessColor color, Square square)
     return false;
 }
 
-bool hasNeighborPawn(const Board& board, Piece pawn, int file, int rank)
+bool hasNeighborPawn(const Bitboards& bitboards, ChessColor color, int file, int rank)
 {
+    const Bitboard ownPawns = bitboards.pawns[Bitboards::indexOf(color)];
+
     for (int f = file - 1; f <= file + 1; f += 2)
     {
         if (f >= 0 && f < 8)
@@ -132,7 +132,8 @@ bool hasNeighborPawn(const Board& board, Piece pawn, int file, int rank)
             for (int dr = -1; dr <= 1; ++dr)
             {
                 const int r = rank + dr;
-                if (r >= 0 && r < 8 && board.pieceAt(static_cast<Square>(r * 8 + f)) == pawn)
+                if (r >= 0 && r < 8 &&
+                    getBit(ownPawns, static_cast<Square>(r * 8 + f)))
                 {
                     return true;
                 }
@@ -142,11 +143,14 @@ bool hasNeighborPawn(const Board& board, Piece pawn, int file, int rank)
     return false;
 }
 
-bool isPhalanxPawn(const Board& board, Piece pawn, int file, int rank)
+bool isPhalanxPawn(const Bitboards& bitboards, ChessColor color, int file, int rank)
 {
+    const Bitboard ownPawns = bitboards.pawns[Bitboards::indexOf(color)];
+
     for (int f = file - 1; f <= file + 1; f += 2)
     {
-        if (f >= 0 && f < 8 && board.pieceAt(static_cast<Square>(rank * 8 + f)) == pawn)
+        if (f >= 0 && f < 8 &&
+            getBit(ownPawns, static_cast<Square>(rank * 8 + f)))
         {
             return true;
         }
@@ -154,12 +158,15 @@ bool isPhalanxPawn(const Board& board, Piece pawn, int file, int rank)
     return false;
 }
 
-bool hasSameFileNeighbor(const Board& board, Piece pawn, int file, int rank)
+bool hasSameFileNeighbor(const Bitboards& bitboards, ChessColor color, int file, int rank)
 {
+    const Bitboard ownPawns = bitboards.pawns[Bitboards::indexOf(color)];
+
     for (int dr = -1; dr <= 1; dr += 2)
     {
         const int r = rank + dr;
-        if (r >= 0 && r < 8 && board.pieceAt(static_cast<Square>(r * 8 + file)) == pawn)
+        if (r >= 0 && r < 8 &&
+            getBit(ownPawns, static_cast<Square>(r * 8 + file)))
         {
             return true;
         }
@@ -167,32 +174,37 @@ bool hasSameFileNeighbor(const Board& board, Piece pawn, int file, int rank)
     return false;
 }
 
-bool isBackwardPawn(const Board& board, ChessColor color, Square square)
+bool isBackwardPawn(const Bitboards& bitboards, ChessColor color, Square square)
 {
+    const int idx = Bitboards::indexOf(color);
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
-    const Piece ownPawn = pawnFor(color);
-    const Piece enemyPawn = enemyPawnFor(color);
+    const int step = (color == ChessColor::White) ? 1 : -1;
 
+    const Bitboard ownPawns = bitboards.pawns[idx];
+    const Bitboard enemyPawns = bitboards.pawns[1 - idx];
+
+    // Brak własnych pionków "wstecz" na liniach bocznych
     for (int f = file - 1; f <= file + 1; f += 2)
     {
         if (f < 0 || f > 7) continue;
         for (int r = rank; r >= 0 && r < 8; r -= step)
         {
-            if (board.pieceAt(static_cast<Square>(r * 8 + f)) == ownPawn)
+            if (getBit(ownPawns, static_cast<Square>(r * 8 + f)))
             {
                 return false;
             }
         }
     }
 
+    // Pionek przeciwnika kontroluje pole stopu
     const int stopRank = rank + step;
     if (stopRank >= 0 && stopRank < 8)
     {
         for (int f = file - 1; f <= file + 1; f += 2)
         {
-            if (f >= 0 && f < 8 && board.pieceAt(static_cast<Square>(stopRank * 8 + f)) == enemyPawn)
+            if (f >= 0 && f < 8 &&
+                getBit(enemyPawns, static_cast<Square>(stopRank * 8 + f)))
             {
                 return true;
             }
@@ -209,33 +221,35 @@ bool isCentralPawn(Square square)
     return (file >= 2 && file <= 5) && (rank >= 2 && rank <= 5);
 }
 
-bool isLockedPawn(const Board& board, ChessColor color, Square square)
+bool isLockedPawn(const Bitboards& bitboards, ChessColor color, Square square)
 {
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
+    const int step = (color == ChessColor::White) ? 1 : -1;
     const int frontRank = rank + step;
 
     if (frontRank >= 0 && frontRank < 8)
     {
-        return board.pieceAt(static_cast<Square>(frontRank * 8 + file)) == enemyPawnFor(color);
+        return getBit(bitboards.pawns[1 - Bitboards::indexOf(color)],
+                      static_cast<Square>(frontRank * 8 + file));
     }
     return false;
 }
 
-bool isPawnLever(const Board& board, ChessColor color, Square square)
+bool isPawnLever(const Bitboards& bitboards, ChessColor color, Square square)
 {
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
+    const int step = (color == ChessColor::White) ? 1 : -1;
     const int targetRank = rank + step;
-    const Piece enemyPawn = enemyPawnFor(color);
 
     if (targetRank < 0 || targetRank >= 8) return false;
 
     for (int f = file - 1; f <= file + 1; f += 2)
     {
-        if (f >= 0 && f < 8 && board.pieceAt(static_cast<Square>(targetRank * 8 + f)) == enemyPawn)
+        if (f >= 0 && f < 8 &&
+            getBit(bitboards.pawns[1 - Bitboards::indexOf(color)],
+                   static_cast<Square>(targetRank * 8 + f)))
         {
             return true;
         }
@@ -243,34 +257,29 @@ bool isPawnLever(const Board& board, ChessColor color, Square square)
     return false;
 }
 
-bool isIsolatedPawnOnFile(const Board& board, ChessColor color, int file)
+bool isIsolatedPawnOnFile(const Bitboards& bitboards, ChessColor color, int file)
 {
-    const Piece enemyPawn = enemyPawnFor(color);
+    // Izolacja pionków przeciwnika (używane w leverOpportunityScore)
+    const int enemyIdx = 1 - Bitboards::indexOf(color);
+    const Bitboard enemyPawns = bitboards.pawns[enemyIdx];
 
-    for (int r = 0; r < 8; ++r)
-    {
-        if (board.pieceAt(static_cast<Square>(r * 8 + file)) == enemyPawn)
-        {
-            bool hasNeighbor = false;
-            if (file > 0 && board.pieceAt(static_cast<Square>(r * 8 + file - 1)) == enemyPawn)
-                hasNeighbor = true;
-            if (file < 7 && board.pieceAt(static_cast<Square>(r * 8 + file + 1)) == enemyPawn)
-                hasNeighbor = true;
-            if (!hasNeighbor) return true;
-        }
-    }
-    return false;
+    const bool leftEmpty = file == 0 || (enemyPawns & fileMaskBB(file - 1)) == 0;
+    const bool rightEmpty = file == 7 || (enemyPawns & fileMaskBB(file + 1)) == 0;
+
+    return leftEmpty && rightEmpty && (enemyPawns & fileMaskBB(file)) != 0;
 }
 
-int leverOpportunityScore(const Board& board, ChessColor color, Square square)
+int leverOpportunityScore(const Bitboards& bitboards, ChessColor color, Square square)
 {
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
+    const int step = (color == ChessColor::White) ? 1 : -1;
     const int targetRank = rank + step;
-    const Piece enemyPawn = enemyPawnFor(color);
 
     if (targetRank < 0 || targetRank >= 8) return 0;
+
+    const int idx = Bitboards::indexOf(color);
+    const Bitboard enemyPawns = bitboards.pawns[1 - idx];
 
     int score = 0;
 
@@ -279,19 +288,18 @@ int leverOpportunityScore(const Board& board, ChessColor color, Square square)
         if (f < 0 || f > 7) continue;
 
         const Square leverSq = static_cast<Square>(targetRank * 8 + f);
-        const Piece target = board.pieceAt(leverSq);
 
-        if (target == enemyPawn)
+        if (getBit(enemyPawns, leverSq))
         {
             const int enemyProgress = pawnProgress(color, leverSq);
             score += 6 + enemyProgress * 2;
 
-            if (isBackwardPawn(board, color, leverSq))
+            if (isBackwardPawn(bitboards, color, leverSq))
             {
                 score += 8;
             }
 
-            if (isIsolatedPawnOnFile(board, color, f))
+            if (isIsolatedPawnOnFile(bitboards, color, f))
             {
                 score += 5;
             }
@@ -362,16 +370,14 @@ int countSpaceControl(ChessColor color, Square square)
     return control;
 }
 
-void computeActiveFiles(const Board& board, ChessColor color, bool activeFiles[8])
+void computeActiveFiles(const Bitboards& bitboards, ChessColor color, bool activeFiles[8])
 {
-    const Piece pawn = pawnFor(color);
     std::fill(activeFiles, activeFiles + 8, false);
 
-    for (int index = 0; index < 64; ++index)
+    Bitboard pawns = bitboards.pawns[Bitboards::indexOf(color)];
+    while (pawns)
     {
-        const Square square = static_cast<Square>(index);
-        if (board.pieceAt(square) != pawn) continue;
-
+        const Square square = popLeastSignificantBit(pawns);
         const int file = fileOf(square);
         activeFiles[file] = true;
         if (file > 0) activeFiles[file - 1] = true;
@@ -381,7 +387,7 @@ void computeActiveFiles(const Board& board, ChessColor color, bool activeFiles[8
 
 }
 
-int PawnEvaluation::evaluate(const Board& board, ChessColor color)
+int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int PassedBonusBase = 30;
     constexpr int CandidatePassedBonusBase = 12;
@@ -405,7 +411,7 @@ int PawnEvaluation::evaluate(const Board& board, ChessColor color)
     constexpr int ConnectedPassedBonus = 45;
     constexpr int MutualDefenseBonus = 8;
 
-    const Piece pawn = pawnFor(color);
+    const int idx = Bitboards::indexOf(color);
     int score = 0;
     std::array<int, 8> pawnsOnFile{};
     std::vector<int> pawnFileCounts;
@@ -414,34 +420,31 @@ int PawnEvaluation::evaluate(const Board& board, ChessColor color)
     int protectedPassedCount = 0;
 
     bool activeFiles[8] = {};
-    computeActiveFiles(board, color, activeFiles);
+    computeActiveFiles(bitboards, color, activeFiles);
 
-    for (int index = 0; index < 64; ++index)
+    Bitboard pawns = bitboards.pawns[idx];
+    while (pawns)
     {
-        const Square square = static_cast<Square>(index);
-        if (board.pieceAt(square) != pawn)
-        {
-            continue;
-        }
+        const Square square = popLeastSignificantBit(pawns);
 
-        const int file = index % 8;
+        const int file = fileOf(square);
         if (!activeFiles[file]) continue;
 
-        const int rank = index / 8;
+        const int rank = rankOf(square);
         const int progress = pawnProgress(color, square);
 
         pawnsOnFile[file]++;
         pawnFileCounts.push_back(file);
 
-        const bool protectedPawn = isPawnProtected(board, color, square);
-        const bool passedPawn   = isPassedPawn(board, color, square);
+        const bool protectedPawn = isPawnProtected(bitboards, color, square);
+        const bool passedPawn   = isPassedPawn(bitboards, color, square);
 
         score += 150 + progress * 9;
 
         if (isCentralPawn(square)) score += CentralBonus;
         if (protectedPawn) score += ProtectedBonus;
-        if (isPhalanxPawn(board, pawn, file, rank)) score += PhalanxBonus;
-        if (hasNeighborPawn(board, pawn, file, rank)) score += ConnectedBonus;
+        if (isPhalanxPawn(bitboards, color, file, rank)) score += PhalanxBonus;
+        if (hasNeighborPawn(bitboards, color, file, rank)) score += ConnectedBonus;
 
         if (passedPawn)
         {
@@ -454,16 +457,16 @@ int PawnEvaluation::evaluate(const Board& board, ChessColor color)
             }
         }
 
-        if (isCandidatePassedPawn(board, color, square))
+        if (isCandidatePassedPawn(bitboards, color, square))
         {
             score += CandidatePassedBonusBase + std::max(0, progress - 2) * 6;
         }
 
-        if (isPawnLever(board, color, square)) score += LeverBonus;
-        if (isLockedPawn(board, color, square)) score += LockedBonus;
-        if (hasSameFileNeighbor(board, pawn, file, rank)) score += PawnChainBonus;
+        if (isPawnLever(bitboards, color, square)) score += LeverBonus;
+        if (isLockedPawn(bitboards, color, square)) score += LockedBonus;
+        if (hasSameFileNeighbor(bitboards, color, file, rank)) score += PawnChainBonus;
 
-        const int leverOpp = leverOpportunityScore(board, color, square);
+        const int leverOpp = leverOpportunityScore(bitboards, color, square);
         if (leverOpp > 0)
         {
             score += leverOpp;
@@ -475,7 +478,7 @@ int PawnEvaluation::evaluate(const Board& board, ChessColor color)
             score += SpaceControlBonus + std::min(8, spaceControl);
         }
 
-        if (isBackwardPawn(board, color, square)) score -= BackwardPenalty;
+        if (isBackwardPawn(bitboards, color, square)) score -= BackwardPenalty;
 
         if (passedPawn && protectedPawn)
         {

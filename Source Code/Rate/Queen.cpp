@@ -9,42 +9,15 @@
 
 namespace
 {
-int countQueenMobility(const Board& board, ChessColor color, int startFile, int startRank)
+int countQueenMobility(const Bitboards& bitboards, ChessColor color, Square from)
 {
-    constexpr int Directions[8][2] = {
-        {0,1}, {1,0}, {0,-1}, {-1,0}, // rook
-        {1,1}, {1,-1}, {-1,-1}, {-1,1} // bishop
-    };
-    int count = 0;
-
-    for (int d = 0; d < 8; ++d)
-    {
-        int f = startFile + Directions[d][0];
-        int r = startRank + Directions[d][1];
-
-        while (f >= 0 && f < 8 && r >= 0 && r < 8)
-        {
-            Square sq = static_cast<Square>(r * 8 + f);
-            Piece p = board.pieceAt(sq);
-            if (p == Piece::None)
-            {
-                ++count;
-            }
-            else
-            {
-                if (getPieceColor(p) != color)
-                    ++count;
-                break;
-            }
-            f += Directions[d][0];
-            r += Directions[d][1];
-        }
-    }
-    return count;
+    Bitboard attacks = AttackTables::queenAttacks(from, bitboards.allOccupied);
+    attacks &= ~bitboards.occupied[Bitboards::indexOf(color)];
+    return countBits(attacks);
 }
 
 // Sprawdza czy hetman jest za wcześnie wyprowadzony (early queen development penalty)
-bool isEarlyQueenDevelopment(const Board& board, ChessColor color, int rank)
+bool isEarlyQueenDevelopment(const Bitboards& bitboards, ChessColor color, int rank)
 {
     int devRank = (color == ChessColor::White) ? rank : 7 - rank;
 
@@ -52,11 +25,9 @@ bool isEarlyQueenDevelopment(const Board& board, ChessColor color, int rank)
     if (devRank >= 2)
     {
         // Sprawdź czy skoczkowie i gońce są jeszcze na miejscu
-        Piece knight = (color == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
-        Piece bishop = (color == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop;
-
-        int knightsHome = countBits(board.getBitboard(knight));
-        int bishopsHome = countBits(board.getBitboard(bishop));
+        const int idx = Bitboards::indexOf(color);
+        int knightsHome = countBits(bitboards.knights[idx]);
+        int bishopsHome = countBits(bitboards.bishops[idx]);
 
         // Jeśli większość lekkich figur jeszcze nie rozwinięta
         return (knightsHome + bishopsHome >= 3);
@@ -65,23 +36,21 @@ bool isEarlyQueenDevelopment(const Board& board, ChessColor color, int rank)
 }
 }
 
-int QueenEvaluation::evaluate(const Board& board, ChessColor color)
+int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int Material = 900;
     constexpr int MobBonusPerSquare = 2;
     constexpr int MobMax = 60;
     constexpr int EarlyQueenPenalty = 30;
 
-    const Piece queen = color == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen;
+    const int idx = Bitboards::indexOf(color);
     int score = 0;
 
-    for (int index = 0; index < 64; ++index)
+    Bitboard queens = bitboards.queens[idx];
+    while (queens)
     {
-        if (board.pieceAt(static_cast<Square>(index)) != queen)
-        {
-            continue;
-        }
-
+        const Square square = popLeastSignificantBit(queens);
+        const int index = static_cast<int>(square);
         const int file = index % 8;
         const int rank = index / 8;
 
@@ -92,13 +61,13 @@ int QueenEvaluation::evaluate(const Board& board, ChessColor color)
         score += 12 - static_cast<int>(centerDist * 2);
 
         // Kara za wczesne wyprowadzenie
-        if (isEarlyQueenDevelopment(board, color, rank))
+        if (isEarlyQueenDevelopment(bitboards, color, rank))
         {
             score -= EarlyQueenPenalty;
         }
 
         // Mobilność
-        const int mobility = countQueenMobility(board, color, file, rank);
+        const int mobility = countQueenMobility(bitboards, color, square);
         score += std::min(mobility * MobBonusPerSquare, MobMax);
     }
 

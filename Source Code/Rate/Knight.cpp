@@ -11,9 +11,12 @@ namespace
 {
 // Outpost: skoczek na polu wspieranym przez własnego piona,
 // którego nie mogą zaatakować pionki przeciwnika
-bool isKnightOutpost(const Board& board, ChessColor color, int file, int rank)
+bool isKnightOutpost(const Board& /*board*/, const Bitboards& bitboards, ChessColor color, int file, int rank)
 {
-    const Piece ownPawn = (color == ChessColor::White) ? Piece::WhitePawn : Piece::BlackPawn;
+    const int idx = Bitboards::indexOf(color);
+    const int ownPawnIdx = idx;
+    const int enemyPawnIdx = 1 - idx;
+
     const int supportingRank = rank + ((color == ChessColor::White) ? -1 : 1);
 
     if (supportingRank >= 0 && supportingRank < 8)
@@ -23,7 +26,7 @@ bool isKnightOutpost(const Board& board, ChessColor color, int file, int rank)
         {
             if (f >= 0 && f < 8)
             {
-                if (board.pieceAt(static_cast<Square>(supportingRank * 8 + f)) == ownPawn)
+                if (getBit(bitboards.pawns[ownPawnIdx], static_cast<Square>(supportingRank * 8 + f)))
                 {
                     supported = true;
                     break;
@@ -37,7 +40,6 @@ bool isKnightOutpost(const Board& board, ChessColor color, int file, int rank)
         return false;
     }
 
-    const Piece enemyPawn = (color == ChessColor::White) ? Piece::BlackPawn : Piece::WhitePawn;
     const int pawnAttackRank1 = rank + ((color == ChessColor::White) ? 1 : -1);
     const int pawnAttackRank2 = rank + ((color == ChessColor::White) ? 2 : -2);
 
@@ -45,12 +47,12 @@ bool isKnightOutpost(const Board& board, ChessColor color, int file, int rank)
     {
         if (f >= 0 && f < 8 && pawnAttackRank1 >= 0 && pawnAttackRank1 < 8)
         {
-            if (board.pieceAt(static_cast<Square>(pawnAttackRank1 * 8 + f)) == enemyPawn)
+            if (getBit(bitboards.pawns[enemyPawnIdx], static_cast<Square>(pawnAttackRank1 * 8 + f)))
                 return false;
         }
         if (f >= 0 && f < 8 && pawnAttackRank2 >= 0 && pawnAttackRank2 < 8)
         {
-            if (board.pieceAt(static_cast<Square>(pawnAttackRank2 * 8 + f)) == enemyPawn)
+            if (getBit(bitboards.pawns[enemyPawnIdx], static_cast<Square>(pawnAttackRank2 * 8 + f)))
                 return false;
         }
     }
@@ -58,10 +60,10 @@ bool isKnightOutpost(const Board& board, ChessColor color, int file, int rank)
     return true;
 }
 
-int countKnightMobility(const Board& board, ChessColor color, Square from)
+int countKnightMobility(const Bitboards& bitboards, ChessColor color, Square from)
 {
     Bitboard attacks = AttackTables::knightAttacks(from);
-    attacks &= ~board.getOccupancy(color);
+    attacks &= ~bitboards.occupied[Bitboards::indexOf(color)];
     return countBits(attacks);
 }
 
@@ -71,7 +73,7 @@ bool isKnightOnEdge(int file, int rank)
 }
 }
 
-int KnightEvaluation::evaluate(const Board& board, ChessColor color)
+int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int Material = 320;
     constexpr int CenterBonusMax = 24;
@@ -81,18 +83,17 @@ int KnightEvaluation::evaluate(const Board& board, ChessColor color)
     constexpr int MobMax = 40;
     constexpr int ConnectedKnightsBonus = 15;
 
-    const Piece knight = color == ChessColor::White ? Piece::WhiteKnight : Piece::BlackKnight;
+    const int idx = Bitboards::indexOf(color);
     int score = 0;
     int knightCount = 0;
 
-    for (int index = 0; index < 64; ++index)
+    Bitboard knights = bitboards.knights[idx];
+    while (knights)
     {
-        if (board.pieceAt(static_cast<Square>(index)) != knight)
-        {
-            continue;
-        }
+        const Square square = popLeastSignificantBit(knights);
 
         ++knightCount;
+        const int index = static_cast<int>(square);
         const int file = index % 8;
         const int rank = index / 8;
 
@@ -106,12 +107,12 @@ int KnightEvaluation::evaluate(const Board& board, ChessColor color)
             score -= EdgePenalty;
         }
 
-        if (isKnightOutpost(board, color, file, rank))
+        if (isKnightOutpost(board, bitboards, color, file, rank))
         {
             score += OutpostBonus;
         }
 
-        const int mobility = countKnightMobility(board, color, static_cast<Square>(index));
+        const int mobility = countKnightMobility(bitboards, color, square);
         score += std::min(mobility * MobBonusPerSquare, MobMax);
     }
 

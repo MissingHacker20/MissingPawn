@@ -9,41 +9,16 @@
 
 namespace
 {
-int countBishopMobility(const Board& board, ChessColor color, int startFile, int startRank)
+int countBishopMobility(const Bitboards& bitboards, ChessColor color, Square from)
 {
-    constexpr int Directions[4][2] = {{1,1}, {1,-1}, {-1,-1}, {-1,1}};
-    int count = 0;
-
-    for (int d = 0; d < 4; ++d)
-    {
-        int f = startFile + Directions[d][0];
-        int r = startRank + Directions[d][1];
-
-        while (f >= 0 && f < 8 && r >= 0 && r < 8)
-        {
-            Square sq = static_cast<Square>(r * 8 + f);
-            Piece p = board.pieceAt(sq);
-            if (p == Piece::None)
-            {
-                ++count;
-            }
-            else
-            {
-                if (getPieceColor(p) != color)
-                    ++count; // capture square
-                break;
-            }
-            f += Directions[d][0];
-            r += Directions[d][1];
-        }
-    }
-    return count;
+    Bitboard attacks = AttackTables::bishopAttacks(from, bitboards.allOccupied);
+    attacks &= ~bitboards.occupied[Bitboards::indexOf(color)];
+    return countBits(attacks);
 }
 
 // Sprawdza czy goniec jest "fianchetto" - na b7/g7/b2/g2 z własnym pionem przed
-bool isFianchetto(const Board& board, ChessColor color, int file, int rank)
+bool isFianchetto(const Bitboards& bitboards, ChessColor color, int file, int rank)
 {
-    const Piece ownPawn = (color == ChessColor::White) ? Piece::WhitePawn : Piece::BlackPawn;
     if (!(file == 1 || file == 6)) return false; // b lub g
 
     const int expectedRank = (color == ChessColor::White) ? 1 : 6;
@@ -53,7 +28,8 @@ bool isFianchetto(const Board& board, ChessColor color, int file, int rank)
     const int pawnRank = rank + ((color == ChessColor::White) ? 1 : -1);
     if (pawnRank >= 0 && pawnRank < 8)
     {
-        return board.pieceAt(static_cast<Square>(pawnRank * 8 + file)) == ownPawn;
+        return getBit(bitboards.pawns[Bitboards::indexOf(color)],
+                      static_cast<Square>(pawnRank * 8 + file));
     }
     return false;
 }
@@ -65,7 +41,7 @@ bool isLongDiagonalBishop(int file, int rank)
 }
 }
 
-int BishopEvaluation::evaluate(const Board& board, ChessColor color)
+int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int Material = 330;
     constexpr int BishopPairBonus = 40;
@@ -74,18 +50,17 @@ int BishopEvaluation::evaluate(const Board& board, ChessColor color)
     constexpr int MobBonusPerSquare = 3;
     constexpr int MobMax = 50;
 
-    const Piece bishop = color == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop;
+    const int idx = Bitboards::indexOf(color);
     int score = 0;
     int count = 0;
 
-    for (int index = 0; index < 64; ++index)
+    Bitboard bishops = bitboards.bishops[idx];
+    while (bishops)
     {
-        if (board.pieceAt(static_cast<Square>(index)) != bishop)
-        {
-            continue;
-        }
+        const Square square = popLeastSignificantBit(bishops);
 
         ++count;
+        const int index = static_cast<int>(square);
         const int file = index % 8;
         const int rank = index / 8;
 
@@ -96,7 +71,7 @@ int BishopEvaluation::evaluate(const Board& board, ChessColor color)
         score += 20 - static_cast<int>(centerDist * 3);
 
         // Fianchetto
-        if (isFianchetto(board, color, file, rank))
+        if (isFianchetto(bitboards, color, file, rank))
         {
             score += FianchettoBonus;
         }
@@ -108,7 +83,7 @@ int BishopEvaluation::evaluate(const Board& board, ChessColor color)
         }
 
         // Mobilność
-        const int mobility = countBishopMobility(board, color, file, rank);
+        const int mobility = countBishopMobility(bitboards, color, square);
         score += std::min(mobility * MobBonusPerSquare, MobMax);
     }
 

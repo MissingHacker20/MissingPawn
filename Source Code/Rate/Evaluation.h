@@ -1,10 +1,13 @@
 #pragma once
 
-#include "Foundation/Board.h"
+#include "Foundation/Bitboards.h"
 
 class Evaluation
 {
 public:
     // Dodatni wynik oznacza przewagę białych, ujemny — czarnych.
     static int evaluate(const Board& board);
+
+    // Wariant z gotowym zestawem Bitboards (bez ponownego liczenia).
+    static int evaluate(const Board& board, const Bitboards& bitboards);
 };

@@ -3,6 +3,7 @@
 #include <array>
 
 #include "Foundation/Bitboard.h"
+#include "Foundation/Piece.h"
 #include "Foundation/Square.h"
 
 namespace AttackTables
@@ -37,6 +38,28 @@ Bitboard bishopAttacks(Square square, Bitboard occupancy);
 Bitboard rookAttacks(Square square, Bitboard occupancy);
 
 Bitboard queenAttacks(Square square, Bitboard occupancy);
+
+// Ataki figury stojącej na `square` przy zadanym occupancy.
+// Dysponuje istniejącymi tablicami - niczego nie generuje od nowa.
+inline Bitboard pieceAttacks(Piece piece, Square square, Bitboard occupancy)
+{
+    switch (piece)
+    {
+    case Piece::WhitePawn:   return whitePawnAttacks(square);
+    case Piece::BlackPawn:   return blackPawnAttacks(square);
+    case Piece::WhiteKnight:
+    case Piece::BlackKnight: return knightAttacks(square);
+    case Piece::WhiteKing:
+    case Piece::BlackKing:   return kingAttacks(square);
+    case Piece::WhiteBishop:
+    case Piece::BlackBishop: return bishopAttacks(square, occupancy);
+    case Piece::WhiteRook:
+    case Piece::BlackRook:   return rookAttacks(square, occupancy);
+    case Piece::WhiteQueen:
+    case Piece::BlackQueen:  return queenAttacks(square, occupancy);
+    default:                 return 0;
+    }
+}
 
 void initAttackTables();
 

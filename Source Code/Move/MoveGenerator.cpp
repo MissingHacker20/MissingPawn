@@ -4,12 +4,39 @@
 #include "Bitboard.h"
 #include "Move.h"
 #include "MoveValidator.h"
+#include "Foundation/Bitboards.h"
+
+namespace
+{
+inline int sideIndex(ChessColor c) { return c == ChessColor::White ? 0 : 1; }
+}
 
 // Lokalny pomocnik: promień między dwoma polami.
 static Bitboard getBetweenRay(Square from, Square to);
 
 void MoveGenerator::generateMoves(
     const Board& board,
+    MoveList& moveList,
+    const MoveValidator::CheckInfo& checkInfo)
+{
+    // Bitboardy biorą wyłącznie dane już wygenerowane przez silnik
+    // (Board + AttackTables); bez kosztownego liczenia szachów/przypięć.
+    const Bitboards bitboards = Bitboards::compute(board, false);
+    generateMoves(board, bitboards, moveList, checkInfo);
+}
+
+void MoveGenerator::generateCaptures(
+    const Board& board,
+    MoveList& moveList,
+    const MoveValidator::CheckInfo& checkInfo)
+{
+    const Bitboards bitboards = Bitboards::compute(board, false);
+    generateCaptures(board, bitboards, moveList, checkInfo);
+}
+
+void MoveGenerator::generateMoves(
+    const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
@@ -23,21 +50,29 @@ void MoveGenerator::generateMoves(
     (void)checkInfo;
     const MoveValidator::CheckInfo pseudoInfo{};
 
-    generateKingMoves(board, moveList, pseudoInfo);
+    // KRÓL wymaga prawdziwego CheckInfo: bez niego generator nie zna pola
+    // atakowanego przez wroga i statusu szacha, przez co generuje roszady
+    // w szachu oraz przez pole atakowane (odrzucane tylko przy roszadzie —
+    // po zwykłym ruchu króla filtr isKingInCheck nadal ratuje sprawę).
+    const MoveValidator::CheckInfo kingInfo =
+        MoveValidator::computeCheckInfo(board, board.getSideToMove());
 
-    generateQueenMoves(board, moveList, pseudoInfo);
+    generateKingMoves(board, bitboards, moveList, kingInfo);
 
-    generateRookMoves(board, moveList, pseudoInfo);
+    generateQueenMoves(board, bitboards, moveList, pseudoInfo);
 
-    generateBishopMoves(board, moveList, pseudoInfo);
+    generateRookMoves(board, bitboards, moveList, pseudoInfo);
 
-    generateKnightMoves(board, moveList, pseudoInfo);
+    generateBishopMoves(board, bitboards, moveList, pseudoInfo);
 
-    generatePawnMoves(board, moveList, pseudoInfo);
+    generateKnightMoves(board, bitboards, moveList, pseudoInfo);
+
+    generatePawnMoves(board, bitboards, moveList, pseudoInfo);
 }
 
 void MoveGenerator::generateCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
@@ -48,23 +83,24 @@ void MoveGenerator::generateCaptures(
     (void)checkInfo;
     const MoveValidator::CheckInfo pseudoInfo{};
 
-    generateQueenCaptures(board, moveList, pseudoInfo);
+    generateQueenCaptures(board, bitboards, moveList, pseudoInfo);
 
-    generateRookCaptures(board, moveList, pseudoInfo);
+    generateRookCaptures(board, bitboards, moveList, pseudoInfo);
 
-    generateBishopCaptures(board, moveList, pseudoInfo);
+    generateBishopCaptures(board, bitboards, moveList, pseudoInfo);
 
-    generateKnightCaptures(board, moveList, pseudoInfo);
+    generateKnightCaptures(board, bitboards, moveList, pseudoInfo);
 
-    generatePawnCaptures(board, moveList, pseudoInfo);
+    generatePawnCaptures(board, bitboards, moveList, pseudoInfo);
 
-    generateKingCaptures(board, moveList, pseudoInfo);
+    generateKingCaptures(board, bitboards, moveList, pseudoInfo);
 }
 
 // Helper functions for generating moves with CheckInfo
 
 void MoveGenerator::generatePawnMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
@@ -75,7 +111,7 @@ void MoveGenerator::generatePawnMoves(
         ? Piece::WhitePawn
         : Piece::BlackPawn;
 
-    Bitboard pawns = board.getBitboard(pawn);
+    Bitboard pawns = bitboards.pawns[sideIndex(side)];
 
     while (pawns)
     {
@@ -96,7 +132,7 @@ void MoveGenerator::generatePawnMoves(
             Square to =
                 static_cast<Square>(forwardRank * 8 + file);
 
-            if (board.pieceAt(to) == Piece::None)
+            if (!getBit(bitboards.allOccupied, to))
             {
                 // Check if this square is allowed by pin/eviction constraints
                 bool squareAllowed = true;
@@ -111,7 +147,7 @@ void MoveGenerator::generatePawnMoves(
                 else if (checkInfo.inCheck)
                 {
                     // In check, check if this is an evasion move
-                    if (!(checkInfo.enemyAttacks & (1ULL << static_cast<int>(to))) && 
+                    if (!(checkInfo.enemyAttacks & (1ULL << static_cast<int>(to))) &&
                         !(checkInfo.checkers & (1ULL << static_cast<int>(to))))
                     {
                         // Not a capture of checker or block - only king moves allowed in double check
@@ -142,7 +178,7 @@ void MoveGenerator::generatePawnMoves(
                         }
                     }
                     // If it's a capture, check if it captures a checker
-                    else if (board.pieceAt(to) != Piece::None && 
+                    else if (board.pieceAt(to) != Piece::None &&
                             getPieceColor(board.pieceAt(to)) != side)
                     {
                         // Capture - only allowed if it captures a checker
@@ -194,7 +230,7 @@ void MoveGenerator::generatePawnMoves(
                             Square second =
                                 static_cast<Square>(secondRank * 8 + file);
 
-                            if (board.pieceAt(second) == Piece::None)
+                            if (!getBit(bitboards.allOccupied, second))
                             {
                                 // Check if double push square is allowed
                                 bool doublePushAllowed = true;
@@ -211,7 +247,7 @@ void MoveGenerator::generatePawnMoves(
                                     // In check, double push only allowed if it's an evasion
                                     // (capture of checker or block)
                                     bool isEvasion = false;
-                                    
+
                                     // Check if it captures a checker (impossible for double push to same file)
                                     // Check if it's a block
                                     Bitboard checkers = checkInfo.checkers;
@@ -224,7 +260,7 @@ void MoveGenerator::generatePawnMoves(
                                             break;
                                         }
                                     }
-                                    
+
                                     if (!isEvasion)
                                     {
                                         doublePushAllowed = false;
@@ -354,7 +390,7 @@ void MoveGenerator::generatePawnMoves(
                     int capturedFile = enPassantFile;
                     int capturedRank = (side == ChessColor::White) ? enPassantRank - 1 : enPassantRank + 1;
                     Square capturedSquare = static_cast<Square>(capturedRank * 8 + capturedFile);
-                    
+
                     // The captured pawn is not on the en passant square, it's beside it
                     // So we need to check if the captured pawn is a checker
                     if (!(checkInfo.checkers & (1ULL << static_cast<int>(capturedSquare))))
@@ -381,18 +417,19 @@ void MoveGenerator::generatePawnMoves(
 
 void MoveGenerator::generateKnightMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = board.getOccupancy(side);
+    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
 
     Piece knight =
         (side == ChessColor::White)
         ? Piece::WhiteKnight
         : Piece::BlackKnight;
 
-    Bitboard knights = board.getBitboard(knight);
+    Bitboard knights = bitboards.knights[sideIndex(side)];
 
     while (knights)
     {
@@ -436,19 +473,20 @@ void MoveGenerator::generateKnightMoves(
 
 void MoveGenerator::generateBishopMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = board.getOccupancy(side);
-    Bitboard allOccupancy = board.getAllOccupancy();
+    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
+    Bitboard allOccupancy = bitboards.allOccupied;
 
     Piece bishop =
         (side == ChessColor::White)
         ? Piece::WhiteBishop
         : Piece::BlackBishop;
 
-    Bitboard bishops = board.getBitboard(bishop);
+    Bitboard bishops = bitboards.bishops[sideIndex(side)];
 
     while (bishops)
     {
@@ -467,7 +505,7 @@ void MoveGenerator::generateBishopMoves(
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
-            
+
             // Add blocking squares for sliding checkers
             Bitboard checkers = checkInfo.checkers;
             while (checkers)
@@ -505,19 +543,20 @@ void MoveGenerator::generateBishopMoves(
 
 void MoveGenerator::generateRookMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = board.getOccupancy(side);
-    Bitboard allOccupancy = board.getAllOccupancy();
+    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
+    Bitboard allOccupancy = bitboards.allOccupied;
 
     Piece rook =
         (side == ChessColor::White)
         ? Piece::WhiteRook
         : Piece::BlackRook;
 
-    Bitboard rooks = board.getBitboard(rook);
+    Bitboard rooks = bitboards.rooks[sideIndex(side)];
 
     while (rooks)
     {
@@ -536,7 +575,7 @@ void MoveGenerator::generateRookMoves(
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
-            
+
             // Add blocking squares for sliding checkers
             Bitboard checkers = checkInfo.checkers;
             while (checkers)
@@ -574,19 +613,20 @@ void MoveGenerator::generateRookMoves(
 
 void MoveGenerator::generateQueenMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = board.getOccupancy(side);
-    Bitboard allOccupancy = board.getAllOccupancy();
+    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
+    Bitboard allOccupancy = bitboards.allOccupied;
 
     Piece queen =
         (side == ChessColor::White)
         ? Piece::WhiteQueen
         : Piece::BlackQueen;
 
-    Bitboard queens = board.getBitboard(queen);
+    Bitboard queens = bitboards.queens[sideIndex(side)];
 
     while (queens)
     {
@@ -605,7 +645,7 @@ void MoveGenerator::generateQueenMoves(
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
-            
+
             // Add blocking squares for sliding checkers
             Bitboard checkers = checkInfo.checkers;
             while (checkers)
@@ -643,18 +683,19 @@ void MoveGenerator::generateQueenMoves(
 
 void MoveGenerator::generateKingMoves(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = board.getOccupancy(side);
+    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
 
     Piece king =
         (side == ChessColor::White)
         ? Piece::WhiteKing
         : Piece::BlackKing;
 
-    Bitboard kings = board.getBitboard(king);
+    Bitboard kings = bitboards.kings[sideIndex(side)];
 
     while (kings)
     {
@@ -668,18 +709,18 @@ void MoveGenerator::generateKingMoves(
 
         // Remove squares attacked by enemy (unless capturing that piece)
         Bitboard safeSquares = attacks & ~checkInfo.enemyAttacks;
-        
+
         // Add back squares where we capture enemy pieces (even if they attack that square)
-Bitboard enemyOccupancy = board.getOccupancy(MoveValidator::oppositeColor(side));
+Bitboard enemyOccupancy = bitboards.occupied[sideIndex(MoveValidator::oppositeColor(side))];
         Bitboard capturableEnemy = safeSquares | (attacks & enemyOccupancy);
-        
+
         // Additional restriction: if in check, king can only move to squares that evade check
         if (checkInfo.inCheck)
         {
             // King moves are only allowed to squares not attacked by enemy
             // (except when capturing the checking piece)
             Bitboard evasionSquares = ~checkInfo.enemyAttacks;
-            
+
             // Add squares where we capture checking pieces
             Bitboard checkers = checkInfo.checkers;
             while (checkers)
@@ -687,7 +728,7 @@ Bitboard enemyOccupancy = board.getOccupancy(MoveValidator::oppositeColor(side))
                 Square checkerSq = popLeastSignificantBit(checkers);
                 evasionSquares |= (1ULL << static_cast<int>(checkerSq));
             }
-            
+
             capturableEnemy &= evasionSquares;
         }
 
@@ -707,7 +748,7 @@ Bitboard enemyOccupancy = board.getOccupancy(MoveValidator::oppositeColor(side))
 
                 // Check if destination square is attacked by enemy sliding pieces with modified occupancy
                 ChessColor enemy = MoveValidator::oppositeColor(side);
-                
+
                 Bitboard enemyRooks = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook);
                 Bitboard enemyQueens = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen);
                 Bitboard enemyBishops = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop);
@@ -715,7 +756,7 @@ Bitboard enemyOccupancy = board.getOccupancy(MoveValidator::oppositeColor(side))
                 // Remove target piece from enemy sliders if it's a slider
                 Bitboard enemyOrthogonal = enemyRooks | enemyQueens;
                 Bitboard enemyDiagonal = enemyBishops | enemyQueens;
-                
+
                 if (target == (enemy == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook) ||
                     target == (enemy == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen))
                 {
@@ -833,17 +874,18 @@ Bitboard enemyOccupancy = board.getOccupancy(MoveValidator::oppositeColor(side))
 
 void MoveGenerator::generatePawnCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     // For captures, we reuse the pawn move generation but filter for captures only
     MoveList allPawnMoves;
-    generatePawnMoves(board, allPawnMoves, checkInfo);
-    
+    generatePawnMoves(board, bitboards, allPawnMoves, checkInfo);
+
     for (int i = 0; i < allPawnMoves.size(); i++)
     {
         const Move& move = allPawnMoves[i];
-        if (move.flag == MoveFlag::Capture || 
+        if (move.flag == MoveFlag::Capture ||
             move.flag >= MoveFlag::PromotionCaptureKnight ||
             move.flag == MoveFlag::EnPassant)
         {
@@ -854,12 +896,13 @@ void MoveGenerator::generatePawnCaptures(
 
 void MoveGenerator::generateKnightCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     MoveList allKnightMoves;
-    generateKnightMoves(board, allKnightMoves, checkInfo);
-    
+    generateKnightMoves(board, bitboards, allKnightMoves, checkInfo);
+
     for (int i = 0; i < allKnightMoves.size(); i++)
     {
         const Move& move = allKnightMoves[i];
@@ -872,12 +915,13 @@ void MoveGenerator::generateKnightCaptures(
 
 void MoveGenerator::generateBishopCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     MoveList allBishopMoves;
-    generateBishopMoves(board, allBishopMoves, checkInfo);
-    
+    generateBishopMoves(board, bitboards, allBishopMoves, checkInfo);
+
     for (int i = 0; i < allBishopMoves.size(); i++)
     {
         const Move& move = allBishopMoves[i];
@@ -890,12 +934,13 @@ void MoveGenerator::generateBishopCaptures(
 
 void MoveGenerator::generateRookCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     MoveList allRookMoves;
-    generateRookMoves(board, allRookMoves, checkInfo);
-    
+    generateRookMoves(board, bitboards, allRookMoves, checkInfo);
+
     for (int i = 0; i < allRookMoves.size(); i++)
     {
         const Move& move = allRookMoves[i];
@@ -908,12 +953,13 @@ void MoveGenerator::generateRookCaptures(
 
 void MoveGenerator::generateQueenCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     MoveList allQueenMoves;
-    generateQueenMoves(board, allQueenMoves, checkInfo);
-    
+    generateQueenMoves(board, bitboards, allQueenMoves, checkInfo);
+
     for (int i = 0; i < allQueenMoves.size(); i++)
     {
         const Move& move = allQueenMoves[i];
@@ -926,12 +972,13 @@ void MoveGenerator::generateQueenCaptures(
 
 void MoveGenerator::generateKingCaptures(
     const Board& board,
+    const Bitboards& bitboards,
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
     MoveList allKingMoves;
-    generateKingMoves(board, allKingMoves, checkInfo);
-    
+    generateKingMoves(board, bitboards, allKingMoves, checkInfo);
+
     for (int i = 0; i < allKingMoves.size(); i++)
     {
         const Move& move = allKingMoves[i];
