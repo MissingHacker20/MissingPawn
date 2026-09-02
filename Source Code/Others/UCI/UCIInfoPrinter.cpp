@@ -19,7 +19,7 @@ void UCIInfoPrinter::scoreCP(
 {
     std::cout
         << "info score cp "
-        << score
+        << score / 10
         << '\n';
 }
 

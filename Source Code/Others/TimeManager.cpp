@@ -390,17 +390,17 @@ else
     // Uwzględnij stronę: dodajemy bezwzględną wartość ewaluacji
     const int absEval = std::abs(eval);
 
-    if (absEval > 500)
+    if (absEval > 5000)
     {
         // Duża przewaga materialna -> pozycja prostsza, szukaj głębiej
         baseDepth += 1;
     }
-    else if (absEval > 200)
+    else if (absEval > 2000)
     {
         // Umiarkowana przewaga -> bez zmian
         // bez zmian
     }
-    else if (absEval < 50)
+    else if (absEval < 500)
     {
         // Równowaga -> pozycja subtelna, nieco płycej (bezpieczniej)
         baseDepth -= 1;

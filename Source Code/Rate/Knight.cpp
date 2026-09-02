@@ -113,7 +113,7 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
         }
 
         const int mobility = countKnightMobility(bitboards, color, square);
-        score += std::min(mobility * MobBonusPerSquare, MobMax);
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
     }
 
     if (knightCount >= 2)

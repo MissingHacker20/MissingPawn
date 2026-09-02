@@ -39,6 +39,27 @@ bool isLongDiagonalBishop(int file, int rank)
 {
     return (file == rank) || (file + rank == 7);
 }
+
+bool bishopQueenBattery(const Bitboards& b, ChessColor color, Square bishop)
+{
+    const int idx = Bitboards::indexOf(color);
+    Bitboard queens = b.queens[idx];
+    while (queens)
+    {
+        const Square queen = popLeastSignificantBit(queens);
+        const int bf = static_cast<int>(bishop) % 8, br = static_cast<int>(bishop) / 8;
+        const int qf = static_cast<int>(queen) % 8, qr = static_cast<int>(queen) / 8;
+        if (std::abs(bf - qf) == std::abs(br - qr))
+        {
+            const int sf = qf > bf ? 1 : -1, sr = qr > br ? 1 : -1;
+            bool clear = true;
+            for (int f = bf + sf, r = br + sr; f != qf; f += sf, r += sr)
+                if (getBit(b.allOccupied, static_cast<Square>(r * 8 + f))) clear = false;
+            if (clear) return true;
+        }
+    }
+    return false;
+}
 }
 
 int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
@@ -84,7 +105,8 @@ int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboard
 
         // Mobilność
         const int mobility = countBishopMobility(bitboards, color, square);
-        score += std::min(mobility * MobBonusPerSquare, MobMax);
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
+        if (bishopQueenBattery(bitboards, color, square)) score += 12;
     }
 
     // Para gońców

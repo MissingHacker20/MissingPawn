@@ -19,6 +19,25 @@ int countPawnsOnFile(const Bitboards& bitboards, ChessColor pawnColor, int file)
     return countBits(bitboards.pawns[Bitboards::indexOf(pawnColor)] & fileMaskBB(file));
 }
 
+bool rookQueenBattery(const Bitboards& b, ChessColor color, Square rook)
+{
+    const int idx = Bitboards::indexOf(color);
+    Bitboard queens = b.queens[idx];
+    while (queens)
+    {
+        const Square queen = popLeastSignificantBit(queens);
+        const int rf = static_cast<int>(rook) % 8, rr = static_cast<int>(rook) / 8;
+        const int qf = static_cast<int>(queen) % 8, qr = static_cast<int>(queen) / 8;
+        if (rf == qf || rr == qr)
+        {
+            const Bitboard ray = (rf == qf) ? fileMaskBB(rf) : (0xFFULL << (rr * 8));
+            if ((b.allOccupied & ray & ~(1ULL << static_cast<int>(rook)) & ~(1ULL << static_cast<int>(queen))) == 0)
+                return true;
+        }
+    }
+    return false;
+}
+
 // Czy wieża jest na tej samej linii co król przeciwnika (atak na króla)
 bool rookOnKingFile(const Board& board, ChessColor color, int file)
 {
@@ -72,6 +91,7 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
     constexpr int SeventhRankBonus = 25;
     constexpr int KingFileBonus = 10;
     constexpr int RooksConnectedBonus = 15;
+    constexpr int VulnerableToMinorOrPawnPenalty = 200;
 
     const int idx = Bitboards::indexOf(color);
     const int seventhRank = color == ChessColor::White ? 6 : 1;
@@ -115,6 +135,13 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
         {
             score += KingFileBonus;
         }
+
+        const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
+        const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
+            bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
+            bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
+        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty / 10;
+        if (rookQueenBattery(bitboards, color, square)) score += 12;
     }
 
     // Połączone wieże

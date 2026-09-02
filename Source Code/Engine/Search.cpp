@@ -27,18 +27,18 @@ int currentIterativeDepth = 0;
 constexpr int PieceValue[]
 {
     0,
-    100,   // WhitePawn
-    320,   // WhiteKnight
-    330,   // WhiteBishop
-    500,   // WhiteRook
-    900,   // WhiteQueen
-    20000, // WhiteKing
-    100,   // BlackPawn
-    320,   // BlackKnight
-    330,   // BlackBishop
-    500,   // BlackRook
-    900,   // BlackQueen
-    20000  // BlackKing
+    1000,   // WhitePawn (milipawns)
+    3200,   // WhiteKnight
+    3300,   // WhiteBishop
+    5000,   // WhiteRook
+    9000,   // WhiteQueen
+    200000, // WhiteKing
+    1000,   // BlackPawn
+    3200,   // BlackKnight
+    3300,   // BlackBishop
+    5000,   // BlackRook
+    9000,   // BlackQueen
+    200000  // BlackKing
 };
 
 inline int valueOfPiece(Piece piece)
@@ -165,7 +165,7 @@ Move Search::findBestMove(Board& board, int depth)
     //--------------------------------------------------
     // Szybka ścieżka: wymuszenie ruchu / mat w 1
     //--------------------------------------------------
-    
+
     MoveList rootMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
     MoveGenerator::generateMoves(board, rootMoves, pseudoInfo);
@@ -337,7 +337,7 @@ Move Search::findBestMove(Board& board, int depth)
 
         std::cout << "info"
                   << " depth " << currentDepth
-                  << " score cp " << bestScore
+                  << " score cp " << bestScore / 10
                   << " nodes " << nodes
                   << " nps " << nps
                   << " time " << elapsed
@@ -472,18 +472,18 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         int pieceValue = 0;
         switch (move.capturedPiece)
         {
-        case Piece::WhitePawn:   case Piece::BlackPawn:   pieceValue = 100;  break;
-        case Piece::WhiteKnight: case Piece::BlackKnight: pieceValue = 320;  break;
-        case Piece::WhiteBishop: case Piece::BlackBishop: pieceValue = 330;  break;
-        case Piece::WhiteRook:   case Piece::BlackRook:   pieceValue = 500;  break;
-        case Piece::WhiteQueen:  case Piece::BlackQueen:  pieceValue = 900;  break;
+        case Piece::WhitePawn:   case Piece::BlackPawn:   pieceValue = 1000;  break;
+        case Piece::WhiteKnight: case Piece::BlackKnight: pieceValue = 3200;  break;
+        case Piece::WhiteBishop: case Piece::BlackBishop: pieceValue = 3300;  break;
+        case Piece::WhiteRook:   case Piece::BlackRook:   pieceValue = 5000;  break;
+        case Piece::WhiteQueen:  case Piece::BlackQueen:  pieceValue = 9000;  break;
         default: pieceValue = 0; break;
         }
 
         // Depth-dependent delta margin: tighter at deeper ply, looser at shallow
         // At ply 0: margin ~200, at ply 16: margin ~50
-        int deltaMargin = 200 - std::min(ply, 12) * 12;
-        deltaMargin = std::max(deltaMargin, 50);
+        int deltaMargin = 2000 - std::min(ply, 12) * 120;
+        deltaMargin = std::max(deltaMargin, 500);
 
         // Don't prune rook/queen captures (value >= 500)
         // For minor pieces, use depth-dependent margin
@@ -511,7 +511,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         {
             int victimValue = valueOfPiece(move.capturedPiece);
             int seeScore = MoveValidator::see(board, move.to);
-            
+
             // Extend if: rook/queen capture, or SEE near zero (unclear exchange)
             if (victimValue >= 500 || (seeScore > -200 && seeScore < 200))
             {
@@ -573,9 +573,9 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     //--------------------------------------------------
     // Generate moves once (reused for terminal detection and search)
     //--------------------------------------------------
-    
+
     const MoveValidator::CheckInfo pseudoInfo{};
-    
+
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, pseudoInfo);
     MoveValidator::filterLegalMoves(board, moves);
@@ -702,13 +702,13 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             int victimValue = 0;
             switch (move.capturedPiece)
             {
-            case Piece::WhiteRook:   case Piece::BlackRook:   victimValue = 500; break;
-            case Piece::WhiteQueen:  case Piece::BlackQueen:  victimValue = 900; break;
+            case Piece::WhiteRook:   case Piece::BlackRook:   victimValue = 5000; break;
+            case Piece::WhiteQueen:  case Piece::BlackQueen:  victimValue = 9000; break;
             default: victimValue = 0; break;
             }
 
             // Only verify at sufficient depth (>=4) and for rook/queen
-            if (victimValue >= 500 && depth >= 4)
+            if (victimValue >= 5000 && depth >= 4)
             {
                 UndoInfo verifyUndo;
                 board.makeMove(move, verifyUndo);

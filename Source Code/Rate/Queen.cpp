@@ -41,6 +41,7 @@ int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards
     constexpr int Material = 900;
     constexpr int MobBonusPerSquare = 2;
     constexpr int MobMax = 60;
+    constexpr int VulnerableToMinorOrPawnPenalty = 200;
     constexpr int EarlyQueenPenalty = 30;
 
     const int idx = Bitboards::indexOf(color);
@@ -66,9 +67,15 @@ int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards
             score -= EarlyQueenPenalty;
         }
 
-        // Mobilność
+        // Mobilność: -5 milipionów po konwersji całej oceny na MP.
         const int mobility = countQueenMobility(bitboards, color, square);
-        score += std::min(mobility * MobBonusPerSquare, MobMax);
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
+
+        const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
+        const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
+            bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
+            bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
+        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty / 10;
     }
 
     return score;

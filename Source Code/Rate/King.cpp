@@ -69,6 +69,13 @@ int countKingZoneAttacks(const Bitboards& bitboards, ChessColor color)
             }
         }
     }
+    const int enemyIdx = Bitboards::indexOf(enemy);
+    const Bitboard zone = AttackTables::kingAttacks(kingSq) | (1ULL << static_cast<int>(kingSq));
+    attacks += 2 * countBits(bitboards.pawnAttacks[enemyIdx] & zone);
+    attacks += 3 * countBits(bitboards.knightAttacks[enemyIdx] & zone);
+    attacks += 4 * countBits(bitboards.bishopAttacks[enemyIdx] & zone);
+    attacks += 5 * countBits(bitboards.rookAttacks[enemyIdx] & zone);
+    attacks += 6 * countBits(bitboards.queenAttacks[enemyIdx] & zone);
     return attacks;
 }
 
@@ -170,7 +177,10 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
         }
 
         int zoneAttacks = countKingZoneAttacks(bitboards, color);
-        score -= zoneAttacks * 15;
+        score -= zoneAttacks * 5;
+
+        // Otwarta linia obok króla zwiększa możliwość wejścia ciężkich figur.
+        score -= countOpenFilesNearKing(bitboards, color) * 18;
 
         int openFiles = countOpenFilesNearKing(bitboards, color);
         score -= openFiles * 10;
