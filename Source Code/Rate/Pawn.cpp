@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <vector>
 
 #include "Foundation/Bitboard.h"
 #include "Foundation/Bitboards.h"
@@ -64,41 +63,44 @@ bool isPassedPawn(const Bitboards& bitboards, ChessColor color, Square square)
 
 bool isCandidatePassedPawn(const Bitboards& bitboards, ChessColor color, Square square)
 {
+    // Kandydat musi mieć konkretną drogę do przełamania: liczymy wyłącznie
+    // piony przeciwnika przed nim oraz własne piony na sąsiednich liniach,
+    // które mogą wesprzeć marsz lub wymianę pionową. Sama liczba pionów na
+    // trzech kolumnach nie jest wystarczającym warunkiem.
     if (isPassedPawn(bitboards, color, square)) return false;
 
     const int idx = Bitboards::indexOf(color);
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int step = (color == ChessColor::White) ? 1 : -1;
-
+    const int step = color == ChessColor::White ? 1 : -1;
     const Bitboard ownPawns = bitboards.pawns[idx];
     const Bitboard enemyPawns = bitboards.pawns[1 - idx];
 
     int enemyBlockers = 0;
-    int friendlyHelpers = 0;
-
+    int usableHelpers = 0;
     for (int f = std::max(0, file - 1); f <= std::min(7, file + 1); ++f)
     {
-        // Blokujący pionek/przedmiot przeciwnika przed pionkiem na linii f
-        bool hasEnemyBlocker = false;
         for (int r = rank + step; r >= 0 && r < 8; r += step)
         {
-            if (getBit(enemyPawns, static_cast<Square>(r * 8 + f)) ||
-                getBit(bitboards.occupied[1 - idx] & ~enemyPawns, static_cast<Square>(r * 8 + f)))
+            if (getBit(enemyPawns, static_cast<Square>(r * 8 + f)))
             {
-                hasEnemyBlocker = true;
+                ++enemyBlockers;
                 break;
             }
         }
 
-        if (hasEnemyBlocker) enemyBlockers++;
-
-        if (f == file) friendlyHelpers++;
-
-        friendlyHelpers += countBits(ownPawns & fileMaskBB(f));
+        if (f == file) continue;
+        for (int r = rank - step; r >= 0 && r < 8; r -= step)
+        {
+            if (getBit(ownPawns, static_cast<Square>(r * 8 + f)))
+            {
+                ++usableHelpers;
+                break;
+            }
+        }
     }
 
-    return friendlyHelpers > enemyBlockers;
+    return enemyBlockers > 0 && usableHelpers >= enemyBlockers;
 }
 
 bool isPawnProtected(const Bitboards& bitboards, ChessColor color, Square square)
@@ -338,14 +340,49 @@ int countPawnIslands(const int* fileCounts)
     return islands;
 }
 
-int countPawnMajority(const std::vector<int>& files)
+int countPawnMajority(const Bitboards& bitboards, ChessColor color)
 {
-    int majority = 0;
-    for (int file : files)
+    const int own = Bitboards::indexOf(color);
+    const int enemy = 1 - own;
+    int bestMajority = 0;
+
+    for (int firstFile : {0, 4})
     {
-        if (file > 1) majority++;
+        int ownCount = 0;
+        int enemyCount = 0;
+        for (int file = firstFile; file < firstFile + 4; ++file)
+        {
+            ownCount += countBits(bitboards.pawns[own] & fileMaskBB(file));
+            enemyCount += countBits(bitboards.pawns[enemy] & fileMaskBB(file));
+        }
+        bestMajority = std::max(bestMajority, ownCount - enemyCount);
     }
-    return majority;
+    return std::max(0, bestMajority);
+}
+
+bool hasConnectedPassedPawn(const Bitboards& bitboards, ChessColor color, Square square)
+{
+    if (!isPassedPawn(bitboards, color, square)) return false;
+
+    const int file = fileOf(square);
+    const int rank = rankOf(square);
+    const int own = Bitboards::indexOf(color);
+    // Liczymy parę tylko od jej lewej strony, aby nie nagradzać jej dwa razy.
+    for (int adjacentFile : {file + 1})
+    {
+        if (adjacentFile < 0 || adjacentFile > 7) continue;
+        for (int adjacentRank = rank - 1; adjacentRank <= rank + 1; ++adjacentRank)
+        {
+            if (adjacentRank >= 0 && adjacentRank < 8 &&
+                getBit(bitboards.pawns[own], static_cast<Square>(adjacentRank * 8 + adjacentFile)) &&
+                isPassedPawn(bitboards, color,
+                    static_cast<Square>(adjacentRank * 8 + adjacentFile)))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 int countSpaceControl(ChessColor color, Square square)
@@ -406,18 +443,14 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
     constexpr int LockedBonus = 8;
     constexpr int LeverBonus = 6;
     constexpr int CentralBonus = 12;
-    constexpr int PassedSupportBonus = 15;
-    constexpr int WeakSquareBonus = 9;
     constexpr int ConnectedPassedBonus = 45;
     constexpr int MutualDefenseBonus = 8;
 
     const int idx = Bitboards::indexOf(color);
     int score = 0;
     std::array<int, 8> pawnsOnFile{};
-    std::vector<int> pawnFileCounts;
     int passedCount = 0;
     int connectedPassedCount = 0;
-    int protectedPassedCount = 0;
 
     bool activeFiles[8] = {};
     computeActiveFiles(bitboards, color, activeFiles);
@@ -434,8 +467,6 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         const int progress = pawnProgress(color, square);
 
         pawnsOnFile[file]++;
-        pawnFileCounts.push_back(file);
-
         const bool protectedPawn = isPawnProtected(bitboards, color, square);
         const bool passedPawn   = isPassedPawn(bitboards, color, square);
 
@@ -452,7 +483,6 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
             score += PassedBonusBase + progress * 15;
             if (protectedPawn)
             {
-                ++protectedPassedCount;
                 score += ProtectedPassedBonus;
             }
         }
@@ -480,10 +510,9 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
 
         if (isBackwardPawn(bitboards, color, square)) score -= BackwardPenalty;
 
-        if (passedPawn && protectedPawn)
+        if (hasConnectedPassedPawn(bitboards, color, square))
         {
             ++connectedPassedCount;
-            score += ConnectedPassedBonus;
         }
     }
 
@@ -506,20 +535,19 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
     }
 
     if (passedCount > 1) score += passedCount * 9;
-    if (protectedPassedCount > 1) score += protectedPassedCount * 6;
-    if (connectedPassedCount > 1) score += connectedPassedCount * 12;
-
-    if (countPawnMajority(pawnFileCounts) > 0)
+    score += connectedPassedCount * ConnectedPassedBonus;
+    const int majority = countPawnMajority(bitboards, color);
+    if (majority > 0)
     {
-        score += MajorityBonus * std::min(3, countPawnMajority(pawnFileCounts));
+        score += MajorityBonus * std::min(3, majority);
     }
 
     const int islands = countPawnIslands(pawnsOnFile.data());
     if (islands > 1) score -= (islands - 1) * IslandPenalty;
 
-    if (protectedPassedCount > 0) score += PassedSupportBonus * protectedPassedCount;
-    if (connectedPassedCount > 0) score += WeakSquareBonus * connectedPassedCount;
-    if (countPawnMajority(pawnFileCounts) > 1) score += MutualDefenseBonus;
+    // Ochrona i połączenie są już uwzględnione przy konkretnych pionach;
+    // nie doliczamy drugiego bonusu za ten sam fakt strukturalny.
+    if (majority > 1) score += MutualDefenseBonus;
 
     return score;
 }

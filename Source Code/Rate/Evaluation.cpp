@@ -70,7 +70,7 @@ int evaluatePst(const Board& board, const Bitboards& b)
         const int oriented = black ? square ^ 56 : square;
         const int mg = pstValue(p, oriented, false);
         const int eg = pstValue(p, oriented, true);
-        score += (black ? -1 : 1) * (mg * (24 - phase) + eg * phase) / 24;
+        score += (black ? -1 : 1) * (mg * phase + eg * (24 - phase)) / 24;
     }
     return score;
 }

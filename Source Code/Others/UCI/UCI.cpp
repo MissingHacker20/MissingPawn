@@ -29,7 +29,7 @@ std::atomic<bool> UCI::searchStarted{false};
 
 // Globalna książka otwarć
 static std::vector<BookEntry> g_openingBook;
-static bool g_openingBookEnabled = true;
+static bool g_openingBookEnabled = false;
 
 bool UCI::executeCommand(
     const std::string& command)
@@ -119,6 +119,10 @@ bool UCI::executeCommand(
         else
         {
             UCIOptionParser::parse(tokens);
+            if (std::find(tokens.begin(), tokens.end(), "BookMoves") != tokens.end())
+            {
+                g_openingBookEnabled = UCIOptions::getBoolOption("BookMoves");
+            }
             std::cout << "info string Option processed." << std::endl;
         }
         return true;
@@ -175,7 +179,7 @@ void UCI::run()
     // Inicjalizuj książkę otwarć
     initializeBook();
     g_openingBook = buildOpeningBook();
-    
+
     std::string command;
 
     while (std::getline(
@@ -204,6 +208,7 @@ void UCI::commandUCI()
     std::cout << "id author Kacper Wieczorek" << std::endl;
     std::cout << "option name Hash type spin default 64 min 1 max 4096" << std::endl;
     std::cout << "option name Ponder type check default false" << std::endl;
+    std::cout << "option name BookMoves type check default false" << std::endl;
     std::cout << "uciok" << std::endl;
 }
 
@@ -323,7 +328,7 @@ void UCI::commandGo(
         // Przeszukuj jak najgłębsze - TimeManager::shouldStop() przerwie wyszukiwanie
         // gdy upłynie czas. Ustawiamy maksymalną głębokość.
         depth = 64;
-        
+
         // Ustaw limit czasu jako twardy limit (bezpiecznik)
         ChessColor side = board.getSideToMove();
         TimeManager::setTimeLimit(
@@ -423,13 +428,13 @@ std::vector<std::string> UCI::tokenize(
 void UCI::commandUCINewGame()
 {
     KillerMoves::clear();
-    
+
     HistoryHeuristic::clear();
-    
+
     board.setStartPosition();
-    
+
     GameHistory::clear();
-    
+
     GameHistory::pushPosition(
         board.getZobristKey());
 

@@ -26,6 +26,14 @@ void UCIOptions::initialize()
         "false",
         "false"
     });
+
+    options.push_back(
+    {
+        "BookMoves",
+        UCIOptionType::Check,
+        "false",
+        "false"
+    });
 }
 
 bool UCIOptions::setOption(

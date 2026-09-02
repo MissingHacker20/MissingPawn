@@ -60,6 +60,7 @@ int MoveOrdering::scoreMove(
     const Move& ttMove,
     int cachedTactical)
 {
+    (void)depth;
     int score = 0;
 
     //--------------------------------------------------------
@@ -148,37 +149,11 @@ int MoveOrdering::scoreMove(
     }
 
     //--------------------------------------------------------
-    // 7) Kara za ruchy pozostawiające własne figury pod bicie
-    //--------------------------------------------------------
-    // Sprawdzamy tylko dla cichych ruchów (nie bicia, nie promocje)
-    // i tylko na płytkich głębokościach (depth <= 8), by nie spowalniać
-    // sortowania w głębokim wyszukiwaniu. Używamy cachedTactical zamiast
-    // przeliczania evaluateTactics dla każdego ruchu.
-    if (!isCapture(move) && !isPromotion(move) && depth <= 8 && cachedTactical != 0)
-    {
-        // cachedTactical to wynik netto (biały - czarny): kara za "wiszące"
-        // figury strony, której figura należy. Dla nas (strona do ruchu):
-        // wynik ujemny = nasze figury są atakowane = kara.
-        int tactical = cachedTactical;
-
-        if (board.getSideToMove() == ChessColor::White)
-        {
-            // tactical < 0 = białe figury wiszą = kara
-            if (tactical < 0)
-            {
-                score += std::max(tactical, -5000); // ogranicz karę
-            }
-        }
-        else
-        {
-            // tactical > 0 = czarne figury wiszą = kara
-            if (tactical > 0)
-            {
-                score += std::min(-tactical, 5000); // ogranicz karę (ujemna)
-            }
-        }
-    }
-
+    // Nie używamy cachedTactical do oceny pojedynczego ruchu. Jest to wynik
+    // pozycji rodzica, a nie pozycji po wykonaniu ruchu, więc wspólna kara
+    // mogłaby odwracać kolejność dobrych ruchów. Taktykę ruchu ocenia SEE
+    // dla bić; ciche ruchy pozostają oceniane przez historię i killer moves.
+    (void)cachedTactical;
     return score;
 }
 

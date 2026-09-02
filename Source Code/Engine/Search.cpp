@@ -638,11 +638,18 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         const Move& move = moves[index];
 
-        // Late Move Reduction
+        // LMR: redukujemy tylko ruchy ciche o niskim prawdopodobieństwie
+        // istotności. Szach, killer, historia i ruch wysoko ustawiony przez
+        // ordering zachowują pełną głębokość.
         bool doReduction = false;
         int reduction = 0;
+        const int historyScore = HistoryHeuristic::get(board.getSideToMove(), move);
+        const bool isKiller = KillerMoves::score(ply, move) > 0;
+        const bool tacticalPosition = tacticalEval != 0;
+        const bool highQuality = index < 6 || historyScore >= 100 || isKiller ||
+                                 tacticalPosition;
 
-        if (index >= 3 && depth >= 3 &&
+        if (index >= 3 && depth >= 3 && !highQuality &&
             move.capturedPiece == Piece::None &&
             move.flag != MoveFlag::KingCastle &&
             move.flag != MoveFlag::QueenCastle &&
@@ -650,12 +657,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
               move.flag <= MoveFlag::PromotionCaptureQueen))
         {
             doReduction = true;
-            reduction = 1;
-
-            if (index >= 6 && depth >= 5)
-            {
-                reduction = 2;
-            }
+            reduction = (index >= 8 && depth >= 5) ? 2 : 1;
         }
 
         UndoInfo undoInfo;
