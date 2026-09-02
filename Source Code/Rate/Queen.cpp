@@ -16,33 +16,39 @@ int countQueenMobility(const Bitboards& bitboards, ChessColor color, Square from
     return countBits(attacks);
 }
 
-// Sprawdza czy hetman jest za wcześnie wyprowadzony (early queen development penalty)
-bool isEarlyQueenDevelopment(const Bitboards& bitboards, ChessColor color, int rank)
+bool queenIsExposedEarly(const Bitboards& bitboards, ChessColor color, Square square)
 {
-    int devRank = (color == ChessColor::White) ? rank : 7 - rank;
-
-    // Jeśli hetman opuścił swój początkowy rząd przed rozwinięciem innych figur
-    if (devRank >= 2)
+    const int idx = Bitboards::indexOf(color);
+    const int enemyIdx = 1 - idx;
+    const int rank = static_cast<int>(square) / 8;
+    const int developmentRank = color == ChessColor::White ? rank : 7 - rank;
+    if (developmentRank < 2)
     {
-        // Sprawdź czy skoczkowie i gońce są jeszcze na miejscu
-        const int idx = Bitboards::indexOf(color);
-        int knightsHome = countBits(bitboards.knights[idx]);
-        int bishopsHome = countBits(bitboards.bishops[idx]);
-
-        // Jeśli większość lekkich figur jeszcze nie rozwinięta
-        return (knightsHome + bishopsHome >= 3);
+        return false;
     }
-    return false;
+
+    constexpr Bitboard WhiteMinorHomes = (1ULL << 1) | (1ULL << 6) | (1ULL << 2) | (1ULL << 5);
+    constexpr Bitboard BlackMinorHomes = (1ULL << 57) | (1ULL << 62) | (1ULL << 58) | (1ULL << 61);
+    const Bitboard minorHomes = color == ChessColor::White ? WhiteMinorHomes : BlackMinorHomes;
+    const int undevelopedMinors = countBits((bitboards.knights[idx] | bitboards.bishops[idx]) & minorHomes);
+    const Bitboard enemyAttacks = bitboards.pawnAttacks[enemyIdx]
+        | bitboards.knightAttacks[enemyIdx]
+        | bitboards.bishopAttacks[enemyIdx]
+        | bitboards.rookAttacks[enemyIdx]
+        | bitboards.queenAttacks[enemyIdx];
+
+    // Penalize concrete loss of tempo risk, not merely leaving the home square.
+    return undevelopedMinors >= 3 && getBit(enemyAttacks, square);
 }
 }
 
 int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 900;
-    constexpr int MobBonusPerSquare = 2;
-    constexpr int MobMax = 60;
+    constexpr int Material = 9000;
+    constexpr int MobBonusPerSquare = 20;
+    constexpr int MobMax = 600;
     constexpr int VulnerableToMinorOrPawnPenalty = 200;
-    constexpr int EarlyQueenPenalty = 30;
+    constexpr int EarlyQueenPenalty = 100;
 
     const int idx = Bitboards::indexOf(color);
     int score = 0;
@@ -59,23 +65,23 @@ int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards
 
         // Centrum (delikatny bonus)
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += 12 - static_cast<int>(centerDist * 2);
+        score += 120 - static_cast<int>(centerDist * 20);
 
-        // Kara za wczesne wyprowadzenie
-        if (isEarlyQueenDevelopment(bitboards, color, rank))
+        // Early development is a problem only when the queen is actually
+        // exposed to attack while the minor pieces still block development.
+        if (queenIsExposedEarly(bitboards, color, square))
         {
             score -= EarlyQueenPenalty;
         }
 
-        // Mobilność: -5 milipionów po konwersji całej oceny na MP.
         const int mobility = countQueenMobility(bitboards, color, square);
-        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 50);
 
         const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
             bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
             bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
-        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty / 10;
+        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty;
     }
 
     return score;

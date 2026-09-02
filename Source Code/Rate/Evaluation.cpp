@@ -30,18 +30,18 @@ int gamePhase(const Bitboards& b)
 
 int pstValue(Piece piece, int square, bool endgame)
 {
-    static constexpr int pawnMG[8] = {0, 5, 8, 12, 18, 28, 45, 0};
-    static constexpr int pawnEG[8] = {0, 8, 12, 18, 28, 42, 65, 0};
-    static constexpr int knightMG[8] = {-25, -10, 5, 12, 12, 5, -10, -25};
-    static constexpr int knightEG[8] = {-15, -5, 5, 10, 10, 5, -5, -15};
-    static constexpr int bishopMG[8] = {-12, -4, 4, 10, 10, 4, -4, -12};
-    static constexpr int bishopEG[8] = {-8, -2, 4, 8, 8, 4, -2, -8};
-    static constexpr int rookMG[8] = {0, 3, 5, 7, 7, 5, 3, 0};
-    static constexpr int rookEG[8] = {8, 10, 12, 14, 14, 12, 10, 8};
-    static constexpr int queenMG[8] = {-8, -2, 3, 6, 6, 3, -2, -8};
-    static constexpr int queenEG[8] = {-4, 0, 4, 7, 7, 4, 0, -4};
-    static constexpr int kingMG[8] = {20, 12, 4, -4, -4, 4, 12, 20};
-    static constexpr int kingEG[8] = {-25, -12, 0, 8, 8, 0, -12, -25};
+    static constexpr int pawnMG[8] = {0, 50, 80, 120, 180, 280, 450, 0};
+    static constexpr int pawnEG[8] = {0, 80, 120, 180, 280, 420, 650, 0};
+    static constexpr int knightMG[8] = {-250, -100, 50, 120, 120, 50, -100, -250};
+    static constexpr int knightEG[8] = {-150, -50, 50, 100, 100, 50, -50, -150};
+    static constexpr int bishopMG[8] = {-120, -40, 40, 100, 100, 40, -40, -120};
+    static constexpr int bishopEG[8] = {-80, -20, 40, 80, 80, 40, -20, -80};
+    static constexpr int rookMG[8] = {0, 30, 50, 70, 70, 50, 30, 0};
+    static constexpr int rookEG[8] = {80, 100, 120, 140, 140, 120, 100, 80};
+    static constexpr int queenMG[8] = {-80, -20, 30, 60, 60, 30, -20, -80};
+    static constexpr int queenEG[8] = {-40, 0, 40, 70, 70, 40, 0, -40};
+    static constexpr int kingMG[8] = {200, 120, 40, -40, -40, 40, 120, 200};
+    static constexpr int kingEG[8] = {-250, -120, 0, 80, 80, 0, -120, -250};
     const int file = square % 8;
     const int rank = square / 8;
     const int edge = std::min({file, 7 - file, rank, 7 - rank});
@@ -117,16 +117,16 @@ int Evaluation::evaluate(const Board& board)
     // każdego koloru.
     const int tactical = TacticsEvaluation::evaluate(board);
 
-    return 10 * (evaluateColor(board, bitboards, ChessColor::White)
+    return evaluateColor(board, bitboards, ChessColor::White)
          - evaluateColor(board, bitboards, ChessColor::Black)
-         + evaluatePst(board, bitboards) + tactical);
+         + evaluatePst(board, bitboards) + tactical;
 }
 
 int Evaluation::evaluate(const Board& board, const Bitboards& bitboards)
 {
     const int tactical = TacticsEvaluation::evaluate(board);
 
-    return 10 * (evaluateColor(board, bitboards, ChessColor::White)
+    return evaluateColor(board, bitboards, ChessColor::White)
          - evaluateColor(board, bitboards, ChessColor::Black)
-         + evaluatePst(board, bitboards) + tactical);
+         + evaluatePst(board, bitboards) + tactical;
 }

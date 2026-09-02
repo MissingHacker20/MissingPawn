@@ -374,11 +374,12 @@ int MoveValidator::pieceValue(Piece piece)
 {
     switch (piece)
     {
-    case Piece::WhitePawn:   case Piece::BlackPawn:   return 100;
-    case Piece::WhiteKnight: case Piece::BlackKnight: return 320;
-    case Piece::WhiteBishop: case Piece::BlackBishop: return 330;
-    case Piece::WhiteRook:   case Piece::BlackRook:   return 500;
-    case Piece::WhiteQueen:  case Piece::BlackQueen:  return 900;
+    case Piece::WhitePawn:   case Piece::BlackPawn:   return 1000;
+    case Piece::WhiteKnight: case Piece::BlackKnight: return 3200;
+    case Piece::WhiteBishop: case Piece::BlackBishop: return 3300;
+    case Piece::WhiteRook:   case Piece::BlackRook:   return 5000;
+    case Piece::WhiteQueen:  case Piece::BlackQueen:  return 9000;
+    case Piece::WhiteKing:   case Piece::BlackKing:   return 200000;
     default: return 0;
     }
 }
@@ -689,7 +690,7 @@ int MoveValidator::evaluateTactics(
                 // stracona. Minimalna, stała kara za bycie atakowanym
                 // (deformacja pozycyjna), by nie karcić legalnych ruchów
                 // na atakowane pola.
-                penalty = 10;
+                penalty = 100;
             }
         }
 

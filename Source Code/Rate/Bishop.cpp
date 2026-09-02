@@ -64,12 +64,12 @@ bool bishopQueenBattery(const Bitboards& b, ChessColor color, Square bishop)
 
 int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 330;
-    constexpr int BishopPairBonus = 40;
-    constexpr int FianchettoBonus = 20;
-    constexpr int LongDiagBonus = 10;
-    constexpr int MobBonusPerSquare = 3;
-    constexpr int MobMax = 50;
+    constexpr int Material = 3300;
+    constexpr int BishopPairBonus = 400;
+    constexpr int FianchettoBonus = 200;
+    constexpr int LongDiagBonus = 100;
+    constexpr int MobBonusPerSquare = 30;
+    constexpr int MobMax = 500;
 
     const int idx = Bitboards::indexOf(color);
     int score = 0;
@@ -89,7 +89,7 @@ int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboard
 
         // Centrum
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += 20 - static_cast<int>(centerDist * 3);
+        score += 200 - static_cast<int>(centerDist * 30);
 
         // Fianchetto
         if (isFianchetto(bitboards, color, file, rank))
@@ -105,8 +105,8 @@ int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboard
 
         // Mobilność
         const int mobility = countBishopMobility(bitboards, color, square);
-        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
-        if (bishopQueenBattery(bitboards, color, square)) score += 12;
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 50);
+        if (bishopQueenBattery(bitboards, color, square)) score += 120;
     }
 
     // Para gońców

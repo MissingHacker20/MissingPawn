@@ -56,22 +56,27 @@ inline int mvvLvaScore(const Move& move)
     return victim * 100 - attacker;
 }
 
-bool hasNonPawnMaterial(const Board& board, ChessColor color)
+int nonPawnMaterialCount(const Board& board)
 {
-    if (color == ChessColor::White)
-    {
-        return (board.getBitboard(Piece::WhiteKnight) |
-                board.getBitboard(Piece::WhiteBishop) |
-                board.getBitboard(Piece::WhiteRook)   |
-                board.getBitboard(Piece::WhiteQueen)) != 0;
-    }
-    else
-    {
-        return (board.getBitboard(Piece::BlackKnight) |
-                board.getBitboard(Piece::BlackBishop) |
-                board.getBitboard(Piece::BlackRook)   |
-                board.getBitboard(Piece::BlackQueen)) != 0;
-    }
+    return countBits(board.getBitboard(Piece::WhiteKnight)) +
+           countBits(board.getBitboard(Piece::WhiteBishop)) +
+           countBits(board.getBitboard(Piece::WhiteRook)) +
+           countBits(board.getBitboard(Piece::WhiteQueen)) +
+           countBits(board.getBitboard(Piece::BlackKnight)) +
+           countBits(board.getBitboard(Piece::BlackBishop)) +
+           countBits(board.getBitboard(Piece::BlackRook)) +
+           countBits(board.getBitboard(Piece::BlackQueen));
+}
+
+bool safeForNullMove(const Board& board, ChessColor side)
+{
+    const Piece rook = side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook;
+    const Piece queen = side == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen;
+    const bool hasMajor = board.getBitboard(rook) != 0 || board.getBitboard(queen) != 0;
+
+    // Null move is unreliable in sparse minor/pawn endings: zugzwang is common
+    // and passing is not a realistic legal option there.
+    return hasMajor || nonPawnMaterialCount(board) >= 4;
 }
 }
 
@@ -480,23 +485,25 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         default: pieceValue = 0; break;
         }
 
-        // Depth-dependent delta margin: tighter at deeper ply, looser at shallow
-        // At ply 0: margin ~200, at ply 16: margin ~50
+        // Delta margins are expressed in milipawns.
         int deltaMargin = 2000 - std::min(ply, 12) * 120;
         deltaMargin = std::max(deltaMargin, 500);
 
-        // Don't prune rook/queen captures (value >= 500)
+        // Don't prune rook/queen captures (value >= 5000)
         // For minor pieces, use depth-dependent margin
-        if (!inCheck && pieceValue < 500 &&
+        if (!inCheck && pieceValue < 5000 &&
             standPat + pieceValue + deltaMargin < alpha)
         {
             continue;
         }
 
-        // SEE pruning: use cached tactical info when available
-        // Threshold -100 allows tactical follow-ups (protected pieces)
-        if (!inCheck && move.capturedPiece != Piece::None &&
-            MoveValidator::see(board, move.to) < -100)
+        // SEE must describe the exchange in the parent position.  Keep it
+        // before makeMove; after the move the victim is no longer on `to`.
+        const int seeScore = (!inCheck && move.capturedPiece != Piece::None)
+            ? MoveValidator::see(board, move.to) : 0;
+
+        // SEE pruning: -1000 MP still allows protected tactical follow-ups.
+        if (!inCheck && move.capturedPiece != Piece::None && seeScore < -1000)
         {
             continue;
         }
@@ -510,10 +517,9 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         if (move.capturedPiece != Piece::None)
         {
             int victimValue = valueOfPiece(move.capturedPiece);
-            int seeScore = MoveValidator::see(board, move.to);
 
-            // Extend if: rook/queen capture, or SEE near zero (unclear exchange)
-            if (victimValue >= 500 || (seeScore > -200 && seeScore < 200))
+            // Extend if: rook/queen capture, or SEE within +/-2000 MP.
+            if (victimValue >= 5000 || (seeScore > -2000 && seeScore < 2000))
             {
                 MoveList oppMoves;
                 MoveGenerator::generateCaptures(board, oppMoves, pseudoInfo);
@@ -606,7 +612,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
     if (depth >= 3 && ply > 0 &&
         !MoveValidator::isKingInCheck(board, board.getSideToMove()) &&
-        hasNonPawnMaterial(board, board.getSideToMove()))
+        safeForNullMove(board, board.getSideToMove()))
     {
         UndoInfo nullUndo;
         board.makeNullMove(nullUndo);
@@ -645,9 +651,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         int reduction = 0;
         const int historyScore = HistoryHeuristic::get(board.getSideToMove(), move);
         const bool isKiller = KillerMoves::score(ply, move) > 0;
-        const bool tacticalPosition = tacticalEval != 0;
-        const bool highQuality = index < 6 || historyScore >= 100 || isKiller ||
-                                 tacticalPosition;
+        const bool highQuality = index < 6 || historyScore >= 100 || isKiller;
 
         if (index >= 3 && depth >= 3 && !highQuality &&
             move.capturedPiece == Piece::None &&
@@ -662,6 +666,14 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         UndoInfo undoInfo;
         board.makeMove(move, undoInfo);
+
+        // LMR is based on the move and child position, not on the net tactical
+        // score of the parent (which can cancel to zero).
+        const bool givesCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+        if (givesCheck)
+        {
+            doReduction = false;
+        }
 
         int score;
 

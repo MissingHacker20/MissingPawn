@@ -8,37 +8,9 @@
 #include "Foundation/Board.h"
 #include "Move/AttackTables.h"
 
-// Unia ataków strony `attacker` budowana wyłącznie z gotowych bitboardów.
-// Równoważna pierwotnej wersji skanującej planszę.
-Bitboard computeAttackBoard(const Bitboards& bitboards, ChessColor attacker)
-{
-    const int idx = Bitboards::indexOf(attacker);
-
-    Bitboard attacked = bitboards.pawnAttacks[idx]
-                      | bitboards.knightAttacks[idx]
-                      | bitboards.bishopAttacks[idx]
-                      | bitboards.rookAttacks[idx]
-                      | bitboards.queenAttacks[idx];
-
-    // Ataki króla (brak dedykowanego pola w Bitboards - bierzemy z AttackTables)
-    Bitboard kings = bitboards.kings[idx];
-    while (kings)
-    {
-        const Square s = popLeastSignificantBit(kings);
-        attacked |= AttackTables::kingAttacks(s);
-    }
-
-    return attacked;
-}
-
 
 namespace
 {
-// Buduje bitboard wszystkich pól atakowanych przez stronę `attacker`.
-// Jest dokładnie równoważny zbiorowi pól, dla których pierwotna funkcja
-// isSquareUnderAttack zwracałaby true, ale liczy ataki tylko raz dla całej
-// planszy zamiast osobno dla każdego pola (duże przyspieszenie).
-
 int countKingZoneAttacks(const Bitboards& bitboards, ChessColor color)
 {
     const int idx = Bitboards::indexOf(color);
@@ -49,34 +21,16 @@ int countKingZoneAttacks(const Bitboards& bitboards, ChessColor color)
 
     ChessColor enemy = (color == ChessColor::White) ? ChessColor::Black : ChessColor::White;
 
-    // Jednorazowo policz wszystkie ataki przeciwnika na planszy.
-    const Bitboard attacked = computeAttackBoard(bitboards, enemy);
-
-    int kf = static_cast<int>(kingSq) % 8;
-    int kr = static_cast<int>(kingSq) / 8;
-    int attacks = 0;
-
-    for (int df = -1; df <= 1; ++df)
-    {
-        for (int dr = -1; dr <= 1; ++dr)
-        {
-            int f = kf + df;
-            int r = kr + dr;
-            if (f >= 0 && f < 8 && r >= 0 && r < 8)
-            {
-                if (getBit(attacked, static_cast<Square>(r * 8 + f)))
-                    ++attacks;
-            }
-        }
-    }
     const int enemyIdx = Bitboards::indexOf(enemy);
     const Bitboard zone = AttackTables::kingAttacks(kingSq) | (1ULL << static_cast<int>(kingSq));
-    attacks += 2 * countBits(bitboards.pawnAttacks[enemyIdx] & zone);
-    attacks += 3 * countBits(bitboards.knightAttacks[enemyIdx] & zone);
-    attacks += 4 * countBits(bitboards.bishopAttacks[enemyIdx] & zone);
-    attacks += 5 * countBits(bitboards.rookAttacks[enemyIdx] & zone);
-    attacks += 6 * countBits(bitboards.queenAttacks[enemyIdx] & zone);
-    return attacks;
+
+    // Each attacked square is counted once per attacker type.  The weights are
+    // the complete definition of this feature; there is no extra base count.
+    return 2 * countBits(bitboards.pawnAttacks[enemyIdx] & zone)
+         + 3 * countBits(bitboards.knightAttacks[enemyIdx] & zone)
+         + 4 * countBits(bitboards.bishopAttacks[enemyIdx] & zone)
+         + 5 * countBits(bitboards.rookAttacks[enemyIdx] & zone)
+         + 6 * countBits(bitboards.queenAttacks[enemyIdx] & zone);
 }
 
 int countOpenFilesNearKing(const Bitboards& bitboards, ChessColor color)
@@ -152,8 +106,8 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
                     const Square sq = static_cast<Square>(shieldRank * 8 + shieldFile);
                     if (getBit(ownPawns, sq))
                     {
-                        if (shieldFile == file) score += 20;
-                        else score += 12;
+                        if (shieldFile == file) score += 200;
+                        else score += 120;
                     }
                 }
             }
@@ -169,21 +123,18 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
                     const Square sq = static_cast<Square>(shieldRank2 * 8 + shieldFile);
                     if (getBit(ownPawns, sq))
                     {
-                        if (shieldFile == file) score += 8;
-                        else score += 5;
+                        if (shieldFile == file) score += 80;
+                        else score += 50;
                     }
                 }
             }
         }
 
         int zoneAttacks = countKingZoneAttacks(bitboards, color);
-        score -= zoneAttacks * 5;
+        score -= zoneAttacks * 50;
 
-        // Otwarta linia obok króla zwiększa możliwość wejścia ciężkich figur.
-        score -= countOpenFilesNearKing(bitboards, color) * 18;
-
-        int openFiles = countOpenFilesNearKing(bitboards, color);
-        score -= openFiles * 10;
+        // Brak własnego pionka na pliku króla ułatwia wejście ciężkich figur.
+        score -= countOpenFilesNearKing(bitboards, color) * 180;
 
         Bitboard defenders = bitboards.knights[idx] | bitboards.bishops[idx];
         Bitboard kingZone = 0;
@@ -198,13 +149,13 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
             }
         }
         if ((defenders & kingZone) == 0)
-            score -= 15;
+            score -= 150;
     }
     else
     {
         // ENDGAME - King activity
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += 30 - static_cast<int>(centerDist * 5);
+        score += 300 - static_cast<int>(centerDist * 50);
 
         const Bitboard pawnsCopy = bitboards.pawns[idx];
         if (pawnsCopy != 0)
@@ -219,7 +170,7 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
                 int dist = std::abs(file - pf) + std::abs(rank - pr);
                 minDist = std::min(minDist, dist);
             }
-            score += (8 - minDist) * 3;
+            score += (8 - minDist) * 30;
         }
     }
 

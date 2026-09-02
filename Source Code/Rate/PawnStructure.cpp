@@ -66,37 +66,34 @@ int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitbo
     return score;
 }
 
-int PawnStructureEvaluation::PieceSpace(const Board& board, const Bitboards& /*bitboards*/, ChessColor color)
+int PawnStructureEvaluation::PieceSpace(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    // UWAGA: opiera się na cache legalnych ruchów (Board::getPieceMoves),
-    // którego nie da się wyrazić statycznymi bitboardami. Patrz komentarz
-    // w podsumowaniu zmian.
-    int own = 0;
-    int enemyTotal = 0;
+    const int ownIdx = Bitboards::indexOf(color);
+    const int enemyIdx = 1 - ownIdx;
+    const Bitboard ownAttacks = bitboards.pawnAttacks[ownIdx]
+        | bitboards.knightAttacks[ownIdx]
+        | bitboards.bishopAttacks[ownIdx]
+        | bitboards.rookAttacks[ownIdx]
+        | bitboards.queenAttacks[ownIdx];
+    const Bitboard enemyAttacks = bitboards.pawnAttacks[enemyIdx]
+        | bitboards.knightAttacks[enemyIdx]
+        | bitboards.bishopAttacks[enemyIdx]
+        | bitboards.rookAttacks[enemyIdx]
+        | bitboards.queenAttacks[enemyIdx];
 
-    for (int index = 0; index < 64; ++index)
+    // Space is controlled territory in the opponent's half, not legal-move
+    // count.  Only uncontested central territory contributes to the score.
+    Bitboard enemyHalf = 0;
+    const int firstEnemyRank = color == ChessColor::White ? 4 : 0;
+    const int lastEnemyRank = color == ChessColor::White ? 7 : 3;
+    for (int rank = firstEnemyRank; rank <= lastEnemyRank; ++rank)
     {
-        const Square sq = static_cast<Square>(index);
-        const Piece piece = board.pieceAt(sq);
-
-        if (piece == Piece::None)
-        {
-            continue;
-        }
-
-        const int moves = countBits(board.getPieceMoves(sq));
-
-        if (getPieceColor(piece) == color)
-        {
-            own += moves;
-        }
-        else
-        {
-            enemyTotal += moves;
-        }
+        enemyHalf |= 0xFFULL << (rank * 8);
     }
 
-    return own - enemyTotal;
+    constexpr Bitboard CenterFiles = 0x3C3C3C3C3C3C3C3CULL;
+    const Bitboard space = ownAttacks & ~enemyAttacks & enemyHalf & CenterFiles;
+    return countBits(space) * 2;
 }
 
 int PawnStructureEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)

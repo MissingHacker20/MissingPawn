@@ -294,16 +294,16 @@ int leverOpportunityScore(const Bitboards& bitboards, ChessColor color, Square s
         if (getBit(enemyPawns, leverSq))
         {
             const int enemyProgress = pawnProgress(color, leverSq);
-            score += 6 + enemyProgress * 2;
+            score += 60 + enemyProgress * 20;
 
             if (isBackwardPawn(bitboards, color, leverSq))
             {
-                score += 8;
+                score += 80;
             }
 
             if (isIsolatedPawnOnFile(bitboards, color, f))
             {
-                score += 5;
+                score += 50;
             }
         }
     }
@@ -426,25 +426,25 @@ void computeActiveFiles(const Bitboards& bitboards, ChessColor color, bool activ
 
 int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int PassedBonusBase = 30;
-    constexpr int CandidatePassedBonusBase = 12;
-    constexpr int ProtectedPassedBonus = 30;
-    constexpr int ConnectedBonus = 12;
-    constexpr int PawnChainBonus = 9;
-    constexpr int PhalanxBonus = 15;
-    constexpr int ProtectedBonus = 8;
-    constexpr int IsolatedPenalty = 15;
-    constexpr int DoubledPenalty = 18;
-    constexpr int TripledPenalty = 38;
-    constexpr int BackwardPenalty = 18;
-    constexpr int IslandPenalty = 9;
-    constexpr int MajorityBonus = 12;
-    constexpr int SpaceControlBonus = 5;
-    constexpr int LockedBonus = 8;
-    constexpr int LeverBonus = 6;
-    constexpr int CentralBonus = 12;
-    constexpr int ConnectedPassedBonus = 45;
-    constexpr int MutualDefenseBonus = 8;
+    constexpr int PassedBonusBase = 80;
+    constexpr int CandidatePassedBonusBase = 40;
+    constexpr int ProtectedPassedBonus = 120;
+    constexpr int ConnectedBonus = 60;
+    constexpr int PawnChainBonus = 45;
+    constexpr int PhalanxBonus = 75;
+    constexpr int ProtectedBonus = 40;
+    constexpr int IsolatedPenalty = 75;
+    constexpr int DoubledPenalty = 90;
+    constexpr int TripledPenalty = 190;
+    constexpr int BackwardPenalty = 90;
+    constexpr int IslandPenalty = 45;
+    constexpr int MajorityBonus = 60;
+    constexpr int SpaceControlBonus = 25;
+    constexpr int LockedBonus = 40;
+    constexpr int LeverBonus = 30;
+    constexpr int CentralBonus = 60;
+    constexpr int ConnectedPassedBonus = 150;
+    constexpr int MutualDefenseBonus = 40;
 
     const int idx = Bitboards::indexOf(color);
     int score = 0;
@@ -470,7 +470,9 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         const bool protectedPawn = isPawnProtected(bitboards, color, square);
         const bool passedPawn   = isPassedPawn(bitboards, color, square);
 
-        score += 150 + progress * 9;
+        // All evaluation values, including material, are milipawns.
+        score += 1000 + progress * 30;
+
 
         if (isCentralPawn(square)) score += CentralBonus;
         if (protectedPawn) score += ProtectedBonus;
@@ -480,7 +482,8 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         if (passedPawn)
         {
             ++passedCount;
-            score += PassedBonusBase + progress * 15;
+            static constexpr int PassedProgressBonus[8] = {0, 0, 40, 100, 220, 400, 700, 1100};
+            score += PassedBonusBase + PassedProgressBonus[std::min(progress, 7)];
             if (protectedPawn)
             {
                 score += ProtectedPassedBonus;
@@ -489,7 +492,7 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
 
         if (isCandidatePassedPawn(bitboards, color, square))
         {
-            score += CandidatePassedBonusBase + std::max(0, progress - 2) * 6;
+            score += CandidatePassedBonusBase + std::max(0, progress - 2) * 30;
         }
 
         if (isPawnLever(bitboards, color, square)) score += LeverBonus;
@@ -505,7 +508,7 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         const int spaceControl = countSpaceControl(color, square);
         if (spaceControl > 0)
         {
-            score += SpaceControlBonus + std::min(8, spaceControl);
+            score += SpaceControlBonus + std::min(80, spaceControl * 10);
         }
 
         if (isBackwardPawn(bitboards, color, square)) score -= BackwardPenalty;
@@ -534,7 +537,7 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         }
     }
 
-    if (passedCount > 1) score += passedCount * 9;
+    if (passedCount > 1) score += passedCount * 60;
     score += connectedPassedCount * ConnectedPassedBonus;
     const int majority = countPawnMajority(bitboards, color);
     if (majority > 0)

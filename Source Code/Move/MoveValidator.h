@@ -31,7 +31,7 @@ public:
     );
 
     // Static Exchange Evaluation (SEE): zwraca bilans wymiany na danym polu
-    // (np. -220 gdy koń 320 jest bity pionkiem, a my odbijamy pionka 100).
+    // (np. -2200 gdy skoczek 3200 jest bity pionkiem, a my odbijamy pionka 1000).
     // Dodatni = wymiana korzystna dla strony do ruchu; ujemna = stratna;
     // 0 = wyrównana.
     static int see(

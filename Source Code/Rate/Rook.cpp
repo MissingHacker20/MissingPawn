@@ -85,12 +85,12 @@ bool areRooksConnected(const Bitboards& bitboards, ChessColor color)
 
 int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 500;
-    constexpr int OpenFileBonus = 25;
-    constexpr int SemiOpenFileBonus = 15;
-    constexpr int SeventhRankBonus = 25;
-    constexpr int KingFileBonus = 10;
-    constexpr int RooksConnectedBonus = 15;
+    constexpr int Material = 5000;
+    constexpr int OpenFileBonus = 250;
+    constexpr int SemiOpenFileBonus = 150;
+    constexpr int SeventhRankBonus = 250;
+    constexpr int KingFileBonus = 100;
+    constexpr int RooksConnectedBonus = 150;
     constexpr int VulnerableToMinorOrPawnPenalty = 200;
 
     const int idx = Bitboards::indexOf(color);
@@ -140,8 +140,8 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
             bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
             bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
-        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty / 10;
-        if (rookQueenBattery(bitboards, color, square)) score += 12;
+        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty;
+        if (rookQueenBattery(bitboards, color, square)) score += 120;
     }
 
     // Połączone wieże

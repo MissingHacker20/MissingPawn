@@ -75,13 +75,13 @@ bool isKnightOnEdge(int file, int rank)
 
 int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 320;
-    constexpr int CenterBonusMax = 24;
-    constexpr int EdgePenalty = 12;
-    constexpr int OutpostBonus = 30;
-    constexpr int MobBonusPerSquare = 4;
-    constexpr int MobMax = 40;
-    constexpr int ConnectedKnightsBonus = 15;
+    constexpr int Material = 3200;
+    constexpr int CenterBonusMax = 240;
+    constexpr int EdgePenalty = 120;
+    constexpr int OutpostBonus = 300;
+    constexpr int MobBonusPerSquare = 40;
+    constexpr int MobMax = 400;
+    constexpr int ConnectedKnightsBonus = 150;
 
     const int idx = Bitboards::indexOf(color);
     int score = 0;
@@ -100,7 +100,7 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
         score += Material;
 
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += CenterBonusMax - static_cast<int>(centerDist * 5);
+        score += CenterBonusMax - static_cast<int>(centerDist * 50);
 
         if (isKnightOnEdge(file, rank))
         {
@@ -113,7 +113,7 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
         }
 
         const int mobility = countKnightMobility(bitboards, color, square);
-        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 5);
+        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 50);
     }
 
     if (knightCount >= 2)
