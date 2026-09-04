@@ -9,7 +9,7 @@ class Search
 {
 public:
     static constexpr int MaxPly = 128;
-    static constexpr int MateScore = 30000;
+    static constexpr int MateScore = 300000;
 
     // depth jest liczbą półruchów analizowanych od bieżącej pozycji.
     static Move findBestMove(Board& board, int depth = 4);

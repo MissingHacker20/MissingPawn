@@ -16,26 +16,31 @@
 
 namespace
 {
-int gamePhase(const Bitboards& b)
-{
-    int phase = 24;
-    for (int c = 0; c < 2; ++c)
-    {
-        phase -= countBits(b.knights[c]) + countBits(b.bishops[c]);
-        phase -= 2 * countBits(b.rooks[c]);
-        phase -= 4 * countBits(b.queens[c]);
-    }
-    return std::max(0, std::min(24, phase));
-}
-
 int pstValue(Piece piece, int square, bool endgame)
 {
     static constexpr int pawnMG[8] = {0, 50, 80, 120, 180, 280, 450, 0};
     static constexpr int pawnEG[8] = {0, 80, 120, 180, 280, 420, 650, 0};
-    static constexpr int knightMG[8] = {-250, -100, 50, 120, 120, 50, -100, -250};
-    static constexpr int knightEG[8] = {-150, -50, 50, 100, 100, 50, -50, -150};
-    static constexpr int bishopMG[8] = {-120, -40, 40, 100, 100, 40, -40, -120};
-    static constexpr int bishopEG[8] = {-80, -20, 40, 80, 80, 40, -20, -80};
+    // Pełne PST: pole jest parametrem, a nie funkcją odległości od krawędzi.
+    static constexpr int knightMG[64] = {
+        -250,-180,-120,-80,-80,-120,-180,-250, -180,-80,0,40,40,0,-80,-180,
+        -120,0,80,120,120,80,0,-120, -80,40,120,180,180,120,40,-80,
+        -80,40,120,180,180,120,40,-80, -120,0,80,120,120,80,0,-120,
+        -180,-80,0,40,40,0,-80,-180, -250,-180,-120,-80,-80,-120,-180,-250};
+    static constexpr int knightEG[64] = {
+        -150,-100,-60,-40,-40,-60,-100,-150, -100,-40,0,30,30,0,-40,-100,
+        -60,0,40,70,70,40,0,-60, -40,30,70,100,100,70,30,-40,
+        -40,30,70,100,100,70,30,-40, -60,0,40,70,70,40,0,-60,
+        -100,-40,0,30,30,0,-40,-100, -150,-100,-60,-40,-40,-60,-100,-150};
+    static constexpr int bishopMG[64] = {
+        -120,-80,-60,-40,-40,-60,-80,-120, -80,-20,0,20,20,0,-20,-80,
+        -60,0,40,60,60,40,0,-60, -40,20,60,100,100,60,20,-40,
+        -40,20,60,100,100,60,20,-40, -60,0,40,60,60,40,0,-60,
+        -80,-20,0,20,20,0,-20,-80, -120,-80,-60,-40,-40,-60,-80,-120};
+    static constexpr int bishopEG[64] = {
+        -80,-50,-30,-20,-20,-30,-50,-80, -50,-10,10,20,20,10,-10,-50,
+        -30,10,40,50,50,40,10,-30, -20,20,50,70,70,50,20,-20,
+        -20,20,50,70,70,50,20,-20, -30,10,40,50,50,40,10,-30,
+        -50,-10,10,20,20,10,-10,-50, -80,-50,-30,-20,-20,-30,-50,-80};
     static constexpr int rookMG[8] = {0, 30, 50, 70, 70, 50, 30, 0};
     static constexpr int rookEG[8] = {80, 100, 120, 140, 140, 120, 100, 80};
     static constexpr int queenMG[8] = {-80, -20, 30, 60, 60, 30, -20, -80};
@@ -44,23 +49,25 @@ int pstValue(Piece piece, int square, bool endgame)
     static constexpr int kingEG[8] = {-250, -120, 0, 80, 80, 0, -120, -250};
     const int file = square % 8;
     const int rank = square / 8;
-    const int edge = std::min({file, 7 - file, rank, 7 - rank});
-    int center = 3 - (std::abs(file - 3) + std::abs(rank - 3)) / 2;
     switch (piece)
     {
-    case Piece::WhitePawn: case Piece::BlackPawn: return (endgame ? pawnEG[rank] : pawnMG[rank]) + center;
-    case Piece::WhiteKnight: case Piece::BlackKnight: return (endgame ? knightEG[edge] : knightMG[edge]) + center;
-    case Piece::WhiteBishop: case Piece::BlackBishop: return (endgame ? bishopEG[edge] : bishopMG[edge]) + center;
-    case Piece::WhiteRook: case Piece::BlackRook: return (endgame ? rookEG[edge] : rookMG[edge]) + center;
-    case Piece::WhiteQueen: case Piece::BlackQueen: return (endgame ? queenEG[edge] : queenMG[edge]) + center;
-    case Piece::WhiteKing: case Piece::BlackKing: return endgame ? kingEG[edge] : kingMG[edge];
+    case Piece::WhitePawn: case Piece::BlackPawn: return endgame ? pawnEG[rank] : pawnMG[rank];
+    case Piece::WhiteKnight: case Piece::BlackKnight: return endgame ? knightEG[square] : knightMG[square];
+    case Piece::WhiteBishop: case Piece::BlackBishop: return endgame ? bishopEG[square] : bishopMG[square];
+    case Piece::WhiteRook: case Piece::BlackRook: return endgame ? rookEG[std::min(file, 7-file)] : rookMG[std::min(file, 7-file)];
+    case Piece::WhiteQueen: case Piece::BlackQueen: return endgame ? queenEG[std::min(file, 7-file)] : queenMG[std::min(file, 7-file)];
+    case Piece::WhiteKing: case Piece::BlackKing:
+    {
+        const int edge = std::min({file, 7 - file, rank, 7 - rank});
+        return endgame ? kingEG[edge] : kingMG[edge];
+    }
     default: return 0;
     }
 }
 
 int evaluatePst(const Board& board, const Bitboards& b)
 {
-    const int phase = gamePhase(b);
+    const int phase = Evaluation::gamePhase(b);
     int score = 0;
     for (int square = 0; square < 64; ++square)
     {
@@ -74,6 +81,18 @@ int evaluatePst(const Board& board, const Bitboards& b)
     }
     return score;
 }
+}
+
+int Evaluation::gamePhase(const Bitboards& bitboards)
+{
+    int phase = 0;
+    for (int c = 0; c < 2; ++c)
+    {
+        phase += countBits(bitboards.knights[c]) + countBits(bitboards.bishops[c]);
+        phase += 2 * countBits(bitboards.rooks[c]);
+        phase += 4 * countBits(bitboards.queens[c]);
+    }
+    return std::max(0, std::min(24, phase));
 }
 
 namespace

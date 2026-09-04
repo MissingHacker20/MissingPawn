@@ -12,6 +12,11 @@ public:
         const Move& move,
         int depth);
 
+    static void penalize(
+        ChessColor side,
+        const Move& move,
+        int depth);
+
     static int get(
         ChessColor side,
         const Move& move);

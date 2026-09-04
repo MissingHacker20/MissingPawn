@@ -1,4 +1,5 @@
 #include "Rate/Queen.h"
+#include "Rate/Evaluation.h"
 
 #include <cstdlib>
 #include <algorithm>
@@ -45,12 +46,14 @@ bool queenIsExposedEarly(const Bitboards& bitboards, ChessColor color, Square sq
 int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int Material = 9000;
-    constexpr int MobBonusPerSquare = 20;
-    constexpr int MobMax = 600;
+    constexpr int MobBonusPerSquareMG = 12;
+    constexpr int MobBonusPerSquareEG = 8;
+    constexpr int MobMax = 400;
     constexpr int VulnerableToMinorOrPawnPenalty = 200;
     constexpr int EarlyQueenPenalty = 100;
 
     const int idx = Bitboards::indexOf(color);
+    const int phase = Evaluation::gamePhase(bitboards);
     int score = 0;
 
     Bitboard queens = bitboards.queens[idx];
@@ -65,7 +68,7 @@ int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards
 
         // Centrum (delikatny bonus)
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += 120 - static_cast<int>(centerDist * 20);
+        score += 70 - static_cast<int>(centerDist * 12);
 
         // Early development is a problem only when the queen is actually
         // exposed to attack while the minor pieces still block development.
@@ -75,7 +78,8 @@ int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards
         }
 
         const int mobility = countQueenMobility(bitboards, color, square);
-        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 50);
+        const int mobBonus = (MobBonusPerSquareMG * phase + MobBonusPerSquareEG * (24 - phase)) / 24;
+        score += std::max(0, std::min(mobility * mobBonus, MobMax) - 50);
 
         const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |

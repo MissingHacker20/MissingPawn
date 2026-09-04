@@ -635,6 +635,84 @@ int MoveValidator::see(
         pieceValue(victim));
 }
 
+namespace
+{
+Bitboard forkAttacks(const Board& board, Piece piece, Square square)
+{
+    const Bitboard occupancy = board.getAllOccupancy();
+    switch (piece)
+    {
+    case Piece::WhiteKnight:
+    case Piece::BlackKnight:
+        return AttackTables::knightAttacks(square);
+    case Piece::WhiteBishop:
+    case Piece::BlackBishop:
+        return AttackTables::bishopAttacks(square, occupancy);
+    case Piece::WhiteRook:
+    case Piece::BlackRook:
+        return AttackTables::rookAttacks(square, occupancy);
+    case Piece::WhiteQueen:
+    case Piece::BlackQueen:
+        return AttackTables::queenAttacks(square, occupancy);
+    default:
+        return 0;
+    }
+}
+
+int pieceValueMP(Piece piece)
+{
+    switch (piece)
+    {
+    case Piece::WhitePawn: case Piece::BlackPawn: return 1000;
+    case Piece::WhiteKnight: case Piece::BlackKnight: return 3200;
+    case Piece::WhiteBishop: case Piece::BlackBishop: return 3300;
+    case Piece::WhiteRook: case Piece::BlackRook: return 5000;
+    case Piece::WhiteQueen: case Piece::BlackQueen: return 9000;
+    default: return 0;
+    }
+}
+
+int forkPenalty(const Board& board, ChessColor attackerColor)
+{
+    const ChessColor victimColor = MoveValidator::oppositeColor(attackerColor);
+    const Bitboard attackers = board.getOccupancy(attackerColor);
+    Bitboard pieces = attackers;
+    int totalPenalty = 0;
+
+    while (pieces)
+    {
+        const Square square = popLeastSignificantBit(pieces);
+        const Piece attacker = board.pieceAt(square);
+        if (attacker == Piece::WhitePawn || attacker == Piece::BlackPawn ||
+            attacker == Piece::WhiteKing || attacker == Piece::BlackKing)
+        {
+            continue;
+        }
+
+        Bitboard targets = forkAttacks(board, attacker, square) & board.getOccupancy(victimColor);
+        int count = 0;
+        int smallestVictim = 200000;
+        while (targets)
+        {
+            const Square target = popLeastSignificantBit(targets);
+            const Piece victim = board.pieceAt(target);
+            if (victim != Piece::WhiteKing && victim != Piece::BlackKing &&
+                !MoveValidator::isSquareAttacked(board, target, victimColor))
+            {
+                ++count;
+                smallestVictim = std::min(smallestVictim, pieceValueMP(victim));
+            }
+        }
+
+        if (count >= 2)
+        {
+            totalPenalty += std::min(1000, smallestVictim / 2);
+        }
+    }
+    return totalPenalty;
+}
+}
+
 int MoveValidator::evaluateTactics(
     const Board& board)
 {
@@ -704,6 +782,10 @@ int MoveValidator::evaluateTactics(
             score += penalty;
         }
     }
+
+    // A fork is a threat to the attacked side, not to the forking piece.
+    score += forkPenalty(board, ChessColor::White);
+    score -= forkPenalty(board, ChessColor::Black);
 
     return score;
 }

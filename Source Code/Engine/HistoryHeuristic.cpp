@@ -23,10 +23,16 @@ void HistoryHeuristic::add(
     const Move& move,
     int depth)
 {
-    history[(int)side]
-           [(int)move.from]
-           [(int)move.to]
-        += depth * depth;
+    int& value = history[(int)side][(int)move.from][(int)move.to];
+    const int bonus = std::min(1024, depth * depth * 8);
+    value += bonus - value * bonus / 16384;
+}
+
+void HistoryHeuristic::penalize(ChessColor side, const Move& move, int depth)
+{
+    int& value = history[(int)side][(int)move.from][(int)move.to];
+    const int penalty = std::min(1024, depth * depth * 4);
+    value -= penalty + value * penalty / 16384;
 }
 
 int HistoryHeuristic::get(

@@ -442,7 +442,10 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     {
         if (moves.size() == 0)
         {
-            return -MateScore + ply;
+            // Mat w 1 ma wartość bazową 300000; każdy kolejny półruch
+            // do mata obniża ją o 10 punktów.
+            const int mateDistance = (ply > 0) ? (ply - 1) : 0;
+            return -MateScore + (mateDistance * 10);
         }
     }
     else
@@ -535,7 +538,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
             }
         }
 
-        int searchDepth = ply + 1 + (recaptureExtension ? 1 : 0);
+        const int searchDepth = ply + 1 + (recaptureExtension ? 1 : 0);
         const int score = -quiesce(board, -beta, -alpha, searchDepth);
 
         board.undoMove(move, undoInfo);
@@ -644,9 +647,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         const Move& move = moves[index];
 
-        // LMR: redukujemy tylko ruchy ciche o niskim prawdopodobieństwie
-        // istotności. Szach, killer, historia i ruch wysoko ustawiony przez
-        // ordering zachowują pełną głębokość.
+        // LMR: redukcja rośnie z głębokością i numerem ruchu, ale maleje dla
+        // ruchów z dobrą historią. Ruchy forcing są wyłączone poniżej.
         bool doReduction = false;
         int reduction = 0;
         const int historyScore = HistoryHeuristic::get(board.getSideToMove(), move);
@@ -661,7 +663,12 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
               move.flag <= MoveFlag::PromotionCaptureQueen))
         {
             doReduction = true;
-            reduction = (index >= 8 && depth >= 5) ? 2 : 1;
+            reduction = 1;
+            if (depth >= 6 && index >= 8) ++reduction;
+            if (depth >= 10 && index >= 16) ++reduction;
+            if (historyScore < -200) ++reduction;
+            if (historyScore > 300) --reduction;
+            reduction = std::max(1, std::min(reduction, depth - 2));
         }
 
         UndoInfo undoInfo;
@@ -674,34 +681,37 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         {
             doReduction = false;
         }
+        // A small, capped check extension keeps forcing lines visible without
+        // allowing repeated checks to grow the tree without bound.
+        const int childDepth = depth - 1 + (givesCheck && ply < 8 ? 1 : 0);
 
         int score;
 
         if (index == 0)
         {
             // Pierwszy ruch (PV move) - pełne okno search
-            score = -negamax(board, depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax(board, childDepth, -beta, -alpha, ply + 1);
         }
         else
         {
             if (doReduction)
             {
-                score = -negamax(board, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(board, std::max(0, childDepth - reduction), -alpha - 1, -alpha, ply + 1);
 
                 if (score > alpha)
                 {
-                    score = -negamax(board, depth - 1, -alpha - 1, -alpha, ply + 1);
+                    score = -negamax(board, childDepth, -alpha - 1, -alpha, ply + 1);
                 }
             }
             else
             {
-                score = -negamax(board, depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax(board, childDepth, -alpha - 1, -alpha, ply + 1);
             }
 
             // Re-search z pełnym oknem tylko dla kolejnych ruchów (index > 0) gdy poprawiły alpha
             if (score > alpha && score < beta)
             {
-                score = -negamax(board, depth - 1, -beta, -alpha, ply + 1);
+                score = -negamax(board, childDepth, -beta, -alpha, ply + 1);
             }
         }
 
@@ -786,8 +796,11 @@ int Search::terminalScore(
 
         if (inCheck)
         {
-            // Mat: strona do ruchu jest zamatowana.
-            return -MateScore + ply;
+            // Mat: strona do ruchu jest zamatowana. Każdy półruch do mata
+            // Mat w 1 ma wartość bazową 300000; każdy kolejny półruch
+            // do mata obniża ją o 10 punktów.
+            const int mateDistance = (ply > 0) ? (ply - 1) : 0;
+            return -MateScore + (mateDistance * 10);
         }
 
         // Pat.

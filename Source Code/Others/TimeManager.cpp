@@ -296,7 +296,7 @@ int TimeManager::getMateSearch()
 bool TimeManager::hasTimeControl()
 {
     // Sprawdzamy czy ustawiono rzeczywisty czas (a nie tylko movetime)
-    return remainingTime[0] > 0 || remainingTime[1] > 0 || moveTime >= 0;
+    return remainingTime[0] > 0 || remainingTime[1] > 0 || moveTime >= 0 || nodeLimit > 0;
 }
 
 int TimeManager::calculateDepthFromTime(

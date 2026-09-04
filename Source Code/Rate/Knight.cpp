@@ -1,4 +1,5 @@
 #include "Rate/Knight.h"
+#include "Rate/Evaluation.h"
 
 #include <cstdlib>
 #include <algorithm>
@@ -76,14 +77,17 @@ bool isKnightOnEdge(int file, int rank)
 int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
     constexpr int Material = 3200;
-    constexpr int CenterBonusMax = 240;
+    constexpr int CenterBonusMax = 180;
     constexpr int EdgePenalty = 120;
-    constexpr int OutpostBonus = 300;
-    constexpr int MobBonusPerSquare = 40;
+    constexpr int OutpostBonusMG = 250;
+    constexpr int OutpostBonusEG = 350;
+    constexpr int MobBonusPerSquareMG = 40;
+    constexpr int MobBonusPerSquareEG = 28;
     constexpr int MobMax = 400;
-    constexpr int ConnectedKnightsBonus = 150;
+    constexpr int ConnectedKnightsBonus = 80;
 
     const int idx = Bitboards::indexOf(color);
+    const int phase = Evaluation::gamePhase(bitboards);
     int score = 0;
     int knightCount = 0;
 
@@ -100,7 +104,7 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
         score += Material;
 
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += CenterBonusMax - static_cast<int>(centerDist * 50);
+        score += CenterBonusMax - static_cast<int>(centerDist * 35);
 
         if (isKnightOnEdge(file, rank))
         {
@@ -109,11 +113,12 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
 
         if (isKnightOutpost(board, bitboards, color, file, rank))
         {
-            score += OutpostBonus;
+            score += (OutpostBonusMG * phase + OutpostBonusEG * (24 - phase)) / 24;
         }
 
         const int mobility = countKnightMobility(bitboards, color, square);
-        score += std::max(0, std::min(mobility * MobBonusPerSquare, MobMax) - 50);
+        const int mobBonus = (MobBonusPerSquareMG * phase + MobBonusPerSquareEG * (24 - phase)) / 24;
+        score += std::max(0, std::min(mobility * mobBonus, MobMax) - 50);
     }
 
     if (knightCount >= 2)
