@@ -23,7 +23,13 @@
 - halfmove clock
 
 ## MissingPawn v2
-- updated MoveGenerator
-- update engine speed
-- new evaluator bitboards
 - evaluator update
+- faster search and move generation
+- improved move ordering and history heuristic
+- improved move validation
+- improved time management
+- millipawn evaluation
+- new bitboards
+- new UCI options and book command
+- tactical evaluation
+- updated move generator
