@@ -48,7 +48,7 @@ This project is released under the MIT License.
 
 ## Author
 
-**Missing Player**
+**Missing Player/Kacper Wieczorek**
 
 # MissingPawn
 
