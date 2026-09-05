@@ -165,13 +165,11 @@ Move Search::findBestMove(Board& board, int depth)
 
     //--------------------------------------------------
     // Inicjalizacja śledzenia powtórzeń na ścieżce searchu.
-    // Zaszczepiamy liczniki pozycjami z historii gry (z wyłączeniem
-    // samej pozycji korzenia), aby powtórzenia z rzeczywistej partii
+    // Zaszczepiamy liczniki pozycjami z historii gry (włącznie z
+    // aktualną pozycją), aby powtórzenia z rzeczywistej partii
     // również były wykrywane wewnątrz symulowanych ruchów.
     //--------------------------------------------------
     repetitionHistory = GameHistory::getPositions();
-    if (!repetitionHistory.empty())
-        repetitionHistory.pop_back();
     repetitionPath.clear();
 
     //--------------------------------------------------
@@ -411,6 +409,15 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         return 0;
     }
 
+    // Repetition check in quiesce (same as in negamax)
+    const uint64_t nodeKey = board.getZobristKey();
+    if (enterNode(nodeKey))
+    {
+        exitNode(nodeKey);
+        return 0;
+    }
+    NodeRepGuard repGuard(nodeKey);
+
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
     const MoveValidator::CheckInfo pseudoInfo{};
 
@@ -554,6 +561,12 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
 int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 {
+    // MaxPly safety check
+    if (ply >= MaxPly - 1)
+    {
+        return Evaluation::evaluate(board);
+    }
+
     TimeManager::incrementNodeCount();
 
     // Initialize PV for this node

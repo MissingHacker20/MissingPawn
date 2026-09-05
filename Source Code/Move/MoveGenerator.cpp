@@ -748,56 +748,6 @@ Bitboard enemyOccupancy = bitboards.occupied[sideIndex(MoveValidator::oppositeCo
 
             Piece target = board.pieceAt(to);
 
-            // Validate king capture: ensure destination square is not attacked by enemy
-            // pieces other than the one being captured
-            if (target != Piece::None)
-            {
-                // Create modified occupancy without the target piece
-                Bitboard modifiedOccupancy = board.getAllOccupancy();
-                clearBit(modifiedOccupancy, to);
-
-                // Check if destination square is attacked by enemy sliding pieces with modified occupancy
-                ChessColor enemy = MoveValidator::oppositeColor(side);
-
-                Bitboard enemyRooks = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook);
-                Bitboard enemyQueens = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen);
-                Bitboard enemyBishops = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop);
-
-                // Remove target piece from enemy sliders if it's a slider
-                Bitboard enemyOrthogonal = enemyRooks | enemyQueens;
-                Bitboard enemyDiagonal = enemyBishops | enemyQueens;
-
-                if (target == (enemy == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook) ||
-                    target == (enemy == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen))
-                {
-                    clearBit(enemyOrthogonal, to);
-                }
-                if (target == (enemy == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop) ||
-                    target == (enemy == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen))
-                {
-                    clearBit(enemyDiagonal, to);
-                }
-
-                Bitboard enemySliderAttacks = 0;
-                enemySliderAttacks |= AttackTables::rookAttacks(to, modifiedOccupancy & (enemyRooks | enemyQueens));
-                enemySliderAttacks |= AttackTables::bishopAttacks(to, modifiedOccupancy & (enemyBishops | enemyQueens));
-
-                // Pawn, knight, king attacks (not affected by occupancy)
-                Bitboard enemyPawnAttacks = (enemy == ChessColor::White)
-                    ? AttackTables::whitePawnAttacks(to)
-                    : AttackTables::blackPawnAttacks(to);
-                Bitboard enemyKnightAttacks = AttackTables::knightAttacks(to);
-                Bitboard enemyKingAttacks = AttackTables::kingAttacks(to);
-
-                Bitboard enemyAttacks = enemySliderAttacks | enemyPawnAttacks | enemyKnightAttacks | enemyKingAttacks;
-
-                // If destination is still attacked, this capture is illegal
-                if (enemyAttacks & (1ULL << static_cast<int>(to)))
-                {
-                    continue; // Skip this move
-                }
-            }
-
             MoveFlag flag =
                 (target == Piece::None)
                 ? MoveFlag::Quiet

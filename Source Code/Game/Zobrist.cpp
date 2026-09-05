@@ -2,6 +2,7 @@
 
 #include "Foundation/Board.h"
 #include "Foundation/Piece.h"
+#include "Move/AttackTables.h"
 
 namespace Zobrist
 {
@@ -73,39 +74,40 @@ bool isEnPassantValid(const Board& board, Square epSquare)
     const int epRank = static_cast<int>(epSquare) / 8;
 
     const ChessColor side = board.getSideToMove();
-    const Piece capturePawn =
+    const Piece ownPawn =
         (side == ChessColor::White)
             ? Piece::WhitePawn
             : Piece::BlackPawn;
-
-    const int captureRank =
+    const Piece enemyPawn =
         (side == ChessColor::White)
-            ? epRank - 1
-            : epRank + 1;
+            ? Piece::BlackPawn
+            : Piece::WhitePawn;
 
-    if (captureRank < 0 || captureRank >= 8)
+    // Sprawdź czy pionek przeciwnika stoi na właściwym polu (za polem EP)
+    const int capturedRank =
+        (side == ChessColor::White)
+            ? epRank + 1
+            : epRank - 1;
+
+    if (capturedRank < 0 || capturedRank >= 8)
     {
         return false;
     }
 
-    for (int fileDelta : { -1, 1 })
+    const Square capturedSquare = static_cast<Square>(capturedRank * 8 + epFile);
+    if (board.pieceAt(capturedSquare) != enemyPawn)
     {
-        const int captureFile = epFile + fileDelta;
-        if (captureFile < 0 || captureFile >= 8)
-        {
-            continue;
-        }
-
-        const Square captureSquare =
-            static_cast<Square>(captureRank * 8 + captureFile);
-
-        if (board.pieceAt(captureSquare) == capturePawn)
-        {
-            return true;
-        }
+        return false;
     }
 
-    return false;
+    // Sprawdź czy pionek strony na ruchu może wejść na epSquare (odwrotna maska ataku)
+    Bitboard attackers = (side == ChessColor::White)
+        ? AttackTables::blackPawnAttacks(epSquare)
+        : AttackTables::whitePawnAttacks(epSquare);
+
+    Bitboard ownPawns = board.getBitboard(ownPawn);
+
+    return (attackers & ownPawns) != 0;
 }
 
 uint64_t getPieceKey(Piece piece, Square square)
