@@ -69,16 +69,35 @@ int evaluatePst(const Board& board, const Bitboards& b)
 {
     const int phase = Evaluation::gamePhase(b);
     int score = 0;
-    for (int square = 0; square < 64; ++square)
+
+    // Odwiedzaj wyłącznie zajęte pola. Poza mniejszą liczbą odczytów mailbox
+    // zachowujemy dokładnie tę samą orientację PST dla czarnych figur.
+    const auto addPiecePst = [&](Bitboard pieces, Piece piece, bool black)
     {
-        const Piece p = board.pieceAt(static_cast<Square>(square));
-        if (p == Piece::None) continue;
-        const bool black = static_cast<int>(p) >= static_cast<int>(Piece::BlackPawn);
-        const int oriented = black ? square ^ 56 : square;
-        const int mg = pstValue(p, oriented, false);
-        const int eg = pstValue(p, oriented, true);
-        score += (black ? -1 : 1) * (mg * phase + eg * (24 - phase)) / 24;
-    }
+        while (pieces)
+        {
+            const int square = static_cast<int>(popLeastSignificantBit(pieces));
+            const int oriented = black ? (square ^ 56) : square;
+            const int mg = pstValue(piece, oriented, false);
+            const int eg = pstValue(piece, oriented, true);
+            score += (black ? -1 : 1) * (mg * phase + eg * (24 - phase)) / 24;
+        }
+    };
+
+    addPiecePst(b.pawns[0], Piece::WhitePawn, false);
+    addPiecePst(b.knights[0], Piece::WhiteKnight, false);
+    addPiecePst(b.bishops[0], Piece::WhiteBishop, false);
+    addPiecePst(b.rooks[0], Piece::WhiteRook, false);
+    addPiecePst(b.queens[0], Piece::WhiteQueen, false);
+    addPiecePst(b.kings[0], Piece::WhiteKing, false);
+    addPiecePst(b.pawns[1], Piece::BlackPawn, true);
+    addPiecePst(b.knights[1], Piece::BlackKnight, true);
+    addPiecePst(b.bishops[1], Piece::BlackBishop, true);
+    addPiecePst(b.rooks[1], Piece::BlackRook, true);
+    addPiecePst(b.queens[1], Piece::BlackQueen, true);
+    addPiecePst(b.kings[1], Piece::BlackKing, true);
+
+    (void)board;
     return score;
 }
 }

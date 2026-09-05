@@ -236,89 +236,22 @@ bool MoveValidator::isSquareAttacked(
     const Piece king = (attacker == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
     if (kingAttacks & board.getBitboard(king)) return true;
 
-    constexpr int RookDirections[4][2] =
+    const Bitboard rookOrQueen = board.getBitboard(
+        (attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook)
+        | board.getBitboard(
+        (attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
+    if (AttackTables::rookAttacks(square, occ) & rookOrQueen)
     {
-        { 0,  1},
-        { 1,  0},
-        { 0, -1},
-        {-1,  0}
-    };
-
-    // Precompute attacker slider bitboards
-    const Bitboard rookOrQueen = board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook)
-        | board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
-
-    for (int dir = 0; dir < 4; dir++)
-    {
-        int file = static_cast<int>(square) % 8;
-        int rank = static_cast<int>(square) / 8;
-
-        while (true)
-        {
-            file += RookDirections[dir][0];
-            rank += RookDirections[dir][1];
-
-            if (file < 0 || file >= 8 || rank < 0 || rank >= 8)
-            {
-                break;
-            }
-
-            const Square target = static_cast<Square>(rank * 8 + file);
-
-            if (!getBit(occ, target))
-            {
-                continue;
-            }
-
-            if (getBit(rookOrQueen, target))
-            {
-                return true;
-            }
-
-            break;
-        }
+        return true;
     }
 
-    constexpr int BishopDirections[4][2] =
+    const Bitboard bishopOrQueen = board.getBitboard(
+        (attacker == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop)
+        | board.getBitboard(
+        (attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
+    if (AttackTables::bishopAttacks(square, occ) & bishopOrQueen)
     {
-        { 1,  1},
-        { 1, -1},
-        {-1, -1},
-        {-1,  1}
-    };
-
-    const Bitboard bishopOrQueen = board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteBishop : Piece::BlackBishop)
-        | board.getBitboard((attacker == ChessColor::White) ? Piece::WhiteQueen : Piece::BlackQueen);
-
-    for (int dir = 0; dir < 4; dir++)
-    {
-        int file = static_cast<int>(square) % 8;
-        int rank = static_cast<int>(square) / 8;
-
-        while (true)
-        {
-            file += BishopDirections[dir][0];
-            rank += BishopDirections[dir][1];
-
-            if (file < 0 || file >= 8 || rank < 0 || rank >= 8)
-            {
-                break;
-            }
-
-            const Square target = static_cast<Square>(rank * 8 + file);
-
-            if (!getBit(occ, target))
-            {
-                continue;
-            }
-
-            if (getBit(bishopOrQueen, target))
-            {
-                return true;
-            }
-
-            break;
-        }
+        return true;
     }
 
     return false;

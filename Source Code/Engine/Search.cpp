@@ -233,17 +233,15 @@ Move Search::findBestMove(Board& board, int depth)
             pvLength[i] = 0;
         }
 
-        MoveList moves;
-        MoveGenerator::generateMoves(board, moves, pseudoInfo);
-        MoveValidator::filterLegalMoves(board, moves);
-
-        // Cache tactical evaluation for move ordering (hanging piece penalty)
-        int tacticalEval = MoveValidator::evaluateTactics(board);
+        // Legalne ruchy korzenia nie zmieniają się między iteracjami; zmienia się
+        // wyłącznie ich kolejność. Reuse listy oszczędza kosztowną generację i
+        // filtrowanie make/unmake na każdej głębokości.
+        MoveList& moves = rootMoves;
 
         // Posortuj root z poprzednim bestMove jako TT move (jeśli istnieje).
         // To utrzymuje stabilność, ale nie blokuje silnika - jeśli inny ruch
         // okaże się lepszy, zostanie wybrany (bo przeszukujemy wszystkie ruchy).
-        MoveOrdering::sortMoves(board, moves, currentDepth, 0, bestMove, tacticalEval);
+        MoveOrdering::sortMoves(board, moves, currentDepth, 0, bestMove);
 
         if (moves.size() == 0)
         {
@@ -421,16 +419,10 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         MoveGenerator::generateCaptures(board, moves, pseudoInfo);
     }
     MoveValidator::filterLegalMoves(board, moves);
-    MoveValidator::updatePieceBitboards(board, moves);
 
-    // Cache tactical evaluation for delta/SEE pruning and move ordering reuse
-    int tacticalEval = 0;
-    if (!inCheck) {
-        tacticalEval = MoveValidator::evaluateTactics(board);
-    }
-
-    // Use full move ordering with tactical evaluation for hanging piece penalty
-    MoveOrdering::sortMoves(board, moves, 0, ply, Move(), tacticalEval);
+    // SEE i delta pruning są liczone tylko dla konkretnych bić poniżej;
+    // nie wykonuj dodatkowej, pełnej oceny taktycznej na każdym q-node.
+    MoveOrdering::sortMoves(board, moves, 0, ply, Move());
 
     // W szachu nie można zastosować stand-pat: trzeba rozpatrzyć
     // wszystkie legalne odpowiedzi na szacha. Jeśli nie ma ruchów,
@@ -590,9 +582,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     MoveValidator::filterLegalMoves(board, moves);
     MoveValidator::updatePieceBitboards(board, moves);
 
-    // Cache tactical evaluation for move ordering (hanging piece penalty)
-    int tacticalEval = MoveValidator::evaluateTactics(board);
-
     const int endScore = terminalScore(board, moves, ply);
     if (endScore != 0)
     {
@@ -620,7 +609,9 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         UndoInfo nullUndo;
         board.makeNullMove(nullUndo);
 
-        int R = (depth > 6) ? 3 : 2;
+        // Adaptive reduction: głębsze i bardziej stabilne pozycje mogą użyć
+        // większego R, ale ograniczamy je, aby nie osłabić wyszukiwania.
+        const int R = std::min(4, 2 + depth / 6);
         int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, ply + 1);
 
         board.undoNullMove(nullUndo);
@@ -631,7 +622,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
-    MoveOrdering::sortMoves(board, moves, depth, ply, Move(), tacticalEval);
+    MoveOrdering::sortMoves(board, moves, depth, ply, Move());
 
     Move bestMove;
     int bestScore = -Infinity;
