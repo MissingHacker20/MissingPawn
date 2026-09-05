@@ -30,6 +30,9 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
 )
 list(FILTER ENGINE_SOURCES EXCLUDE REGEX "${CMAKE_CURRENT_SOURCE_DIR}/Tests/.*")
 
+set(ENGINE_CORE_SOURCES ${ENGINE_SOURCES})
+list(FILTER ENGINE_CORE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+
 add_executable(MissingPawn
     ${ENGINE_SOURCES}
     app.rc
@@ -50,6 +53,20 @@ target_include_directories(MissingPawn PRIVATE
 target_compile_definitions(MissingPawn PRIVATE
     _CRT_SECURE_NO_WARNINGS
 )
+
+option(MISSINGPAWN_BUILD_TESTS "Build MissingPawn regression tests" ON)
+if(MISSINGPAWN_BUILD_TESTS)
+    enable_testing()
+    add_executable(LegalMovePerft
+        ${ENGINE_CORE_SOURCES}
+        Tests/LegalMovePerft.cpp
+    )
+    target_include_directories(LegalMovePerft PRIVATE
+        . Engine Foundation Game Move Others/UCI Rate OpeningBooks
+    )
+    target_compile_definitions(LegalMovePerft PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME LegalMovePerft COMMAND LegalMovePerft)
+endif()
 
 if(WIN32)
     target_compile_definitions(MissingPawn PRIVATE NOMINMAX)

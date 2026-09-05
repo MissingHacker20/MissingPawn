@@ -87,13 +87,13 @@ int MoveOrdering::scoreMove(
         // MVV-LVA: wyżej bicia wartościowych bierek przez mniej wartościowe
         score += victim * 100 - attacker;
 
-        // Static Exchange Evaluation: zyskowna wymiana (SEE > 0) ląduje
-        // wyżej niż równa (0), a stratna (SEE < 0) niżej - dzięki temu
-        // silnik najpierw próbuje bić figury, które po pełnej wymianie
-        // faktycznie zostają zyskiem (np. goniec bierze hetmana, który
-        // nie zostanie odzyskany), zamiast tych, po których sam ginie.
-        const int seeScore = MoveValidator::see(board, move.to);
-        score += seeScore;
+        // SEE jest najdroższe dla wymian małej wartości. Stosujemy je tylko
+        // dla podejrzanych bić (atakujący jest co najmniej tak wartościowy jak
+        // ofiara); oczywiście dobre bicia MVV-LVA nie potrzebują pełnej SEE.
+        if (attacker >= victim)
+        {
+            score += MoveValidator::see(board, move.to);
+        }
 
         // Promocja z biciem jeszcze wyżej
         if (isPromotion(move))
@@ -186,21 +186,24 @@ void MoveOrdering::sortMoves(
         order[i] = i;
     }
 
-    // Sortujemy tablicę indeksów po prekomputowanych wynikach (malejąco).
-    std::sort(order, order + count, [&](int a, int b)
+    // Częściowe sortowanie przez wybór: wyszukiwanie zużywa najczęściej
+    // tylko początek listy (PVS), a wynik i tak jest deterministyczny.
+    // Zachowujemy pełne uporządkowanie, ale bez comparatora std::sort.
+    for (int i = 0; i < count; ++i)
     {
-        return scores[a] > scores[b];
-    });
+        int best = i;
+        for (int j = i + 1; j < count; ++j)
+        {
+            if (scores[order[j]] > scores[order[best]])
+                best = j;
+        }
+        std::swap(order[i], order[best]);
+    }
 
-    // Przepisz ruchy w nowej (posortowanej) kolejności, na miejscu.
     Move scratch[MaxMoves];
     for (int i = 0; i < count; ++i)
-    {
         scratch[i] = moves[order[i]];
-    }
     for (int i = 0; i < count; ++i)
-    {
         moves[i] = scratch[i];
-    }
 }
 

@@ -88,7 +88,8 @@ int Search::pvLength[MaxPly];
 Move Search::completedPvTable[MaxPly][MaxPly];
 int Search::completedPvLength[MaxPly];
 
-std::unordered_map<uint64_t, int> Search::repetitionCounts;
+std::vector<uint64_t> Search::repetitionHistory;
+std::vector<uint64_t> Search::repetitionPath;
 
 bool Search::ponderEnabled = false;
 
@@ -106,18 +107,28 @@ struct NodeRepGuard
 
 bool Search::enterNode(uint64_t zobristKey)
 {
-    repetitionCounts[zobristKey]++;
-    return repetitionCounts[zobristKey] >= 3;
+    repetitionPath.push_back(zobristKey);
+    int count = 0;
+    for (const uint64_t key : repetitionHistory)
+        if (key == zobristKey) ++count;
+    for (const uint64_t key : repetitionPath)
+        if (key == zobristKey) ++count;
+    return count >= 3;
 }
 
 void Search::exitNode(uint64_t zobristKey)
 {
-    auto it = repetitionCounts.find(zobristKey);
-    if (it != repetitionCounts.end())
+    if (!repetitionPath.empty() && repetitionPath.back() == zobristKey)
     {
-        if (--(it->second) <= 0)
+        repetitionPath.pop_back();
+        return;
+    }
+    for (auto it = repetitionPath.begin(); it != repetitionPath.end(); ++it)
+    {
+        if (*it == zobristKey)
         {
-            repetitionCounts.erase(it);
+            repetitionPath.erase(it);
+            return;
         }
     }
 }
@@ -158,14 +169,10 @@ Move Search::findBestMove(Board& board, int depth)
     // samej pozycji korzenia), aby powtórzenia z rzeczywistej partii
     // również były wykrywane wewnątrz symulowanych ruchów.
     //--------------------------------------------------
-    repetitionCounts.clear();
-    {
-        const auto& history = GameHistory::getPositions();
-        for (size_t i = 0; i + 1 < history.size(); ++i)
-        {
-            repetitionCounts[history[i]]++;
-        }
-    }
+    repetitionHistory = GameHistory::getPositions();
+    if (!repetitionHistory.empty())
+        repetitionHistory.pop_back();
+    repetitionPath.clear();
 
     //--------------------------------------------------
     // Szybka ścieżka: wymuszenie ruchu / mat w 1
@@ -174,7 +181,6 @@ Move Search::findBestMove(Board& board, int depth)
     MoveList rootMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
     MoveGenerator::generateMoves(board, rootMoves, pseudoInfo);
-    MoveValidator::filterLegalMoves(board, rootMoves);
 
     if (rootMoves.size() == 0)
     {
@@ -205,7 +211,6 @@ Move Search::findBestMove(Board& board, int depth)
 
         MoveList oppMoves;
         MoveGenerator::generateMoves(board, oppMoves, pseudoInfo);
-        MoveValidator::filterLegalMoves(board, oppMoves);
         const bool oppInCheck =
             MoveValidator::isKingInCheck(board, board.getSideToMove());
 
@@ -416,9 +421,8 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     else
     {
-        MoveGenerator::generateCaptures(board, moves, pseudoInfo);
+        MoveGenerator::generateLegalCaptures(board, moves, pseudoInfo);
     }
-    MoveValidator::filterLegalMoves(board, moves);
 
     // SEE i delta pruning są liczone tylko dla konkretnych bić poniżej;
     // nie wykonuj dodatkowej, pełnej oceny taktycznej na każdym q-node.
@@ -517,8 +521,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
             if (victimValue >= 5000 || (seeScore > -2000 && seeScore < 2000))
             {
                 MoveList oppMoves;
-                MoveGenerator::generateCaptures(board, oppMoves, pseudoInfo);
-                MoveValidator::filterLegalMoves(board, oppMoves);
+                MoveGenerator::generateLegalCaptures(board, oppMoves, pseudoInfo);
                 for (int j = 0; j < oppMoves.size(); ++j)
                 {
                     if (oppMoves[j].to == move.to && oppMoves[j].capturedPiece != Piece::None)
@@ -579,7 +582,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, pseudoInfo);
-    MoveValidator::filterLegalMoves(board, moves);
     MoveValidator::updatePieceBitboards(board, moves);
 
     const int endScore = terminalScore(board, moves, ply);

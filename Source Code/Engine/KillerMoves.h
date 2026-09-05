@@ -7,7 +7,7 @@ class KillerMoves
 public:
 
 static constexpr int MaxDepth = 128;
-    static constexpr int KillerCount = 3;
+    static constexpr int KillerCount = 2;
 
     static void clear();
 

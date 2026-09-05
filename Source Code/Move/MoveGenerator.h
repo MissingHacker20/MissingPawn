@@ -9,11 +9,21 @@ class MoveGenerator
 {
 public:
 
+    // Zwraca wyłącznie legalne bicia, w tym bezpieczne en passant.
     static void generateCaptures(
         const Board& board,
         MoveList& moves,
         const MoveValidator::CheckInfo& checkInfo);
 
+    // Jawna nazwa ścieżki używanej przez QSearch. Zachowuje tę samą
+    // kolejność i semantykę co generateCaptures().
+    static void generateLegalCaptures(
+        const Board& board,
+        MoveList& moves,
+        const MoveValidator::CheckInfo& checkInfo);
+
+    // Zwraca wyłącznie legalne ruchy. Legalność jest sprawdzana bitboardowo
+    // przez MoveValidator, bez modyfikowania stanu Board.
     static void generateMoves(
         const Board& board,
         MoveList& moveList,

@@ -3,7 +3,7 @@
 #include "Foundation/Board.h"
 #include "Move/MoveList.h"
 
-#include <unordered_map>
+#include <vector>
 
 class Search
 {
@@ -41,6 +41,8 @@ private:
 
     static bool ponderEnabled;
 
-    // Licznik wystąpień pozycji na bieżącej ścieżce searchu.
-    static std::unordered_map<uint64_t, int> repetitionCounts;
+    // Pozycje historii i aktualnej gałęzi. Liniowe zliczanie jest ograniczone
+    // do historii partii oraz bieżącej głębokości, bez hash-map alokowanej w node.
+    static std::vector<uint64_t> repetitionHistory;
+    static std::vector<uint64_t> repetitionPath;
 };

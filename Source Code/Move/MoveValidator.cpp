@@ -102,7 +102,7 @@ static Bitboard getBetweenRay(Square from, Square to)
 }
 
 void MoveValidator::filterLegalMoves(
-    Board& board,
+    const Board& board,
     MoveList& moveList)
 {
     MoveList legalMoves;
@@ -120,77 +120,174 @@ void MoveValidator::filterLegalMoves(
     moveList = legalMoves;
 }
 
+namespace
+{
+using PieceBoards = std::array<Bitboard, static_cast<int>(Piece::Count)>;
+
+bool isSquareAttackedVirtual(
+    Square square,
+    ChessColor attacker,
+    Bitboard occupancy,
+    const PieceBoards& pieces)
+{
+    const Piece pawn = attacker == ChessColor::White ? Piece::WhitePawn : Piece::BlackPawn;
+    const Piece knight = attacker == ChessColor::White ? Piece::WhiteKnight : Piece::BlackKnight;
+    const Piece bishop = attacker == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop;
+    const Piece rook = attacker == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook;
+    const Piece queen = attacker == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen;
+    const Piece king = attacker == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing;
+
+    Bitboard attackers = pieces[static_cast<int>(pawn)];
+    while (attackers)
+    {
+        const Square from = popLeastSignificantBit(attackers);
+        const Bitboard attacks = attacker == ChessColor::White
+            ? AttackTables::whitePawnAttacks(from)
+            : AttackTables::blackPawnAttacks(from);
+        if (getBit(attacks, square)) return true;
+    }
+
+    if (AttackTables::knightAttacks(square) & pieces[static_cast<int>(knight)]) return true;
+    if (AttackTables::kingAttacks(square) & pieces[static_cast<int>(king)]) return true;
+    if (AttackTables::rookAttacks(square, occupancy) &
+        (pieces[static_cast<int>(rook)] | pieces[static_cast<int>(queen)])) return true;
+    if (AttackTables::bishopAttacks(square, occupancy) &
+        (pieces[static_cast<int>(bishop)] | pieces[static_cast<int>(queen)])) return true;
+    return false;
+}
+
+PieceBoards copyPieceBoards(const Board& board);
+
+void makeVirtualMove(
+    const Board& board,
+    const Move& move,
+    PieceBoards& pieces,
+    bool moveCastlingRook)
+{
+    pieces = copyPieceBoards(board);
+
+    const int movingIndex = static_cast<int>(move.piece);
+    clearBit(pieces[movingIndex], move.from);
+
+    const Piece target = board.pieceAt(move.to);
+    if (target != Piece::None)
+        clearBit(pieces[static_cast<int>(target)], move.to);
+
+    if (move.flag == MoveFlag::EnPassant)
+    {
+        const int file = static_cast<int>(move.to) % 8;
+        const int rank = static_cast<int>(move.to) / 8;
+        const int capturedRank = rank +
+            (board.getSideToMove() == ChessColor::White ? -1 : 1);
+        clearBit(pieces[static_cast<int>(move.capturedPiece)],
+                 static_cast<Square>(capturedRank * 8 + file));
+    }
+
+    Piece placed = move.piece;
+    switch (move.flag)
+    {
+    case MoveFlag::PromotionKnight:
+    case MoveFlag::PromotionCaptureKnight:
+        placed = board.getSideToMove() == ChessColor::White ? Piece::WhiteKnight : Piece::BlackKnight; break;
+    case MoveFlag::PromotionBishop:
+    case MoveFlag::PromotionCaptureBishop:
+        placed = board.getSideToMove() == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop; break;
+    case MoveFlag::PromotionRook:
+    case MoveFlag::PromotionCaptureRook:
+        placed = board.getSideToMove() == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook; break;
+    case MoveFlag::PromotionQueen:
+    case MoveFlag::PromotionCaptureQueen:
+        placed = board.getSideToMove() == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen; break;
+    default: break;
+    }
+    setBit(pieces[static_cast<int>(placed)], move.to);
+
+    if (moveCastlingRook && move.flag == MoveFlag::KingCastle)
+    {
+        const bool white = board.getSideToMove() == ChessColor::White;
+        const Piece rook = white ? Piece::WhiteRook : Piece::BlackRook;
+        clearBit(pieces[static_cast<int>(rook)], white ? Square::H1 : Square::H8);
+        setBit(pieces[static_cast<int>(rook)], white ? Square::F1 : Square::F8);
+    }
+    else if (moveCastlingRook && move.flag == MoveFlag::QueenCastle)
+    {
+        const bool white = board.getSideToMove() == ChessColor::White;
+        const Piece rook = white ? Piece::WhiteRook : Piece::BlackRook;
+        clearBit(pieces[static_cast<int>(rook)], white ? Square::A1 : Square::A8);
+        setBit(pieces[static_cast<int>(rook)], white ? Square::D1 : Square::D8);
+    }
+}
+
+Bitboard virtualOccupancy(const PieceBoards& pieces)
+{
+    Bitboard occupancy = 0;
+    for (const Bitboard bitboard : pieces) occupancy |= bitboard;
+    return occupancy;
+}
+
+PieceBoards copyPieceBoards(const Board& board)
+{
+    PieceBoards pieces{};
+    for (int i = 0; i < static_cast<int>(Piece::Count); ++i)
+        pieces[i] = board.getBitboard(static_cast<Piece>(i));
+    return pieces;
+}
+
+bool virtualKingSafe(
+    const PieceBoards& pieces,
+    ChessColor side,
+    Square kingSquare)
+{
+    return !isSquareAttackedVirtual(
+        kingSquare, MoveValidator::oppositeColor(side),
+        virtualOccupancy(pieces), pieces);
+}
+}
+
 bool MoveValidator::isMoveLegal(
-    Board& board,
+    const Board& board,
     const Move& move)
 {
     const Piece target = board.pieceAt(move.to);
     if (target == Piece::WhiteKing || target == Piece::BlackKing)
-    {
         return false;
-    }
 
-    //--------------------------------------------------
-    // Castling validation
-    //--------------------------------------------------
+    const ChessColor side = board.getSideToMove();
+    const Piece king = side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing;
+    const int kingIndex = static_cast<int>(king);
 
-    if (move.flag == MoveFlag::KingCastle)
+    // Wirtualny stan jest zbudowany wyłącznie z bitboardów. Nie modyfikujemy
+    // Board, więc ta ścieżka nie potrzebuje makeMove/undoMove.
+    PieceBoards pieces;
+    makeVirtualMove(board, move, pieces, true);
+
+    Square kingSquare = move.piece == king ? move.to : board.getKingSquare(side);
+    if (kingSquare == Square::None)
+        kingSquare = popLeastSignificantBit(pieces[kingIndex]);
+
+    // Przy roszadzie pole przejściowe króla musi być bezpieczne. Sprawdzamy je
+    // jako osobny wirtualny ruch, bez przesuwania wieży.
+    if (move.flag == MoveFlag::KingCastle || move.flag == MoveFlag::QueenCastle)
     {
-        ChessColor side = board.getSideToMove();
-
-        if (isKingInCheck(board, side))
-        {
+        const PieceBoards initial = copyPieceBoards(board);
+        if (isSquareAttackedVirtual(
+                move.from, oppositeColor(side), board.getAllOccupancy(), initial))
             return false;
-        }
-        UndoInfo undo;
-        Move stepMove(
+
+        PieceBoards transit;
+        Move transitMove(
             move.from,
-            (side == ChessColor::White) ? Square::F1 : Square::F8,
-            move.piece,
-            MoveFlag::Quiet);
-
-        board.makeMove(stepMove, undo);
-        bool inCheckAfter = isKingInCheck(board, side);
-        board.undoMove(stepMove, undo);
-
-        if (inCheckAfter)
-        {
+            move.flag == MoveFlag::KingCastle
+                ? (side == ChessColor::White ? Square::F1 : Square::F8)
+                : (side == ChessColor::White ? Square::D1 : Square::D8),
+            king, MoveFlag::Quiet);
+        makeVirtualMove(board, transitMove, transit, false);
+        const Square transitSquare = transitMove.to;
+        if (!virtualKingSafe(transit, side, transitSquare))
             return false;
-        }
-    }
-    else if (move.flag == MoveFlag::QueenCastle)
-    {
-        ChessColor side = board.getSideToMove();
-
-        if (isKingInCheck(board, side))
-        {
-            return false;
-        }
-        UndoInfo undo;
-        Move stepMove(
-            move.from,
-            (side == ChessColor::White) ? Square::D1 : Square::D8,
-            move.piece,
-            MoveFlag::Quiet);
-
-        board.makeMove(stepMove, undo);
-        bool inCheckAfter = isKingInCheck(board, side);
-        board.undoMove(stepMove, undo);
-
-        if (inCheckAfter)
-        {
-            return false;
-        }
     }
 
-    UndoInfo undoInfo;
-    ChessColor side = board.getSideToMove();
-
-    board.makeMove(move, undoInfo);
-    bool legal = !isKingInCheck(board, side);
-    board.undoMove(move, undoInfo);
-
-    return legal;
+    return virtualKingSafe(pieces, side, kingSquare);
 }
 
 bool MoveValidator::isSquareAttacked(

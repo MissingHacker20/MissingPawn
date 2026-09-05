@@ -23,6 +23,7 @@ void MoveGenerator::generateMoves(
     // (Board + AttackTables); bez kosztownego liczenia szachów/przypięć.
     const Bitboards bitboards = Bitboards::compute(board, false);
     generateMoves(board, bitboards, moveList, checkInfo);
+    MoveValidator::filterLegalMoves(board, moveList);
 }
 
 void MoveGenerator::generateCaptures(
@@ -32,6 +33,15 @@ void MoveGenerator::generateCaptures(
 {
     const Bitboards bitboards = Bitboards::compute(board, false);
     generateCaptures(board, bitboards, moveList, checkInfo);
+    MoveValidator::filterLegalMoves(board, moveList);
+}
+
+void MoveGenerator::generateLegalCaptures(
+    const Board& board,
+    MoveList& moveList,
+    const MoveValidator::CheckInfo& checkInfo)
+{
+    generateCaptures(board, moveList, checkInfo);
 }
 
 void MoveGenerator::generateMoves(
