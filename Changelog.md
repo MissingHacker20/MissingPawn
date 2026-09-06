@@ -33,3 +33,7 @@
 - new UCI options and book command
 - tactical evaluation
 - updated move generator
+
+## MissingPAwn v3
+- move generation update
+- improvement of bitboards

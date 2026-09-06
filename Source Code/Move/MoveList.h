@@ -2,25 +2,22 @@
 
 #include "Foundation/Move.h"
 
-#include <vector>
+#include <array>
+#include <cstddef>
 
 class MoveList
 {
 public:
+    static constexpr int Capacity = 256;
+
     void add(const Move& move)
     {
-        moves.push_back(move);
+        if (count < Capacity)
+            moves[static_cast<std::size_t>(count++)] = move;
     }
 
-    void clear()
-    {
-        moves.clear();
-    }
-
-    int size() const
-    {
-        return static_cast<int>(moves.size());
-    }
+    void clear() { count = 0; }
+    int size() const { return count; }
 
     const Move& operator[](int index) const
     {
@@ -32,26 +29,12 @@ public:
         return moves[static_cast<std::size_t>(index)];
     }
 
-    std::vector<Move>::iterator begin()
-    {
-        return moves.begin();
-    }
-
-    std::vector<Move>::iterator end()
-    {
-        return moves.end();
-    }
-
-    std::vector<Move>::const_iterator begin() const
-    {
-        return moves.begin();
-    }
-
-    std::vector<Move>::const_iterator end() const
-    {
-        return moves.end();
-    }
+    Move* begin() { return moves.data(); }
+    Move* end() { return moves.data() + count; }
+    const Move* begin() const { return moves.data(); }
+    const Move* end() const { return moves.data() + count; }
 
 private:
-    std::vector<Move> moves;
+    std::array<Move, Capacity> moves{};
+    int count = 0;
 };

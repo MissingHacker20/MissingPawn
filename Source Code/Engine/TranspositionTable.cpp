@@ -30,7 +30,7 @@ void TranspositionTable::initialize(size_t sizeMB)
     const size_t numEntries = sizeBytes / EntrySize;
 
     size_t powerOfTwo = 1;
-    while (powerOfTwo < numEntries)
+    while ((powerOfTwo << 1) <= numEntries)
     {
         powerOfTwo <<= 1;
     }
@@ -41,7 +41,9 @@ void TranspositionTable::initialize(size_t sizeMB)
 #if defined(_WIN32)
     table = static_cast<Entry*>(_aligned_malloc(tableSize * EntrySize, 64));
 #else
-    table = static_cast<Entry*>(std::aligned_alloc(64, tableSize * EntrySize));
+    const size_t allocationSize =
+        ((tableSize * EntrySize + 63) / 64) * 64;
+    table = static_cast<Entry*>(std::aligned_alloc(64, allocationSize));
 #endif
     if (!table)
     {

@@ -5,6 +5,22 @@
 #include "MoveList.h"
 #include "MoveValidator.h"
 
+// Dane wspólne dla jednego wywołania generatora. Trzymanie ich razem
+// zapobiega ponownemu pobieraniu occupancy i CheckInfo w kolejnych etapach.
+struct MoveGenerationContext
+{
+    ChessColor side = ChessColor::White;
+    Bitboard ownOccupancy = 0;
+    Bitboard enemyOccupancy = 0;
+    Bitboard totalOccupancy = 0;
+    Square kingSquare = Square::None;
+    Bitboard checkers = 0;
+    Bitboard pinned = 0;
+    Bitboard evasionMask = ~Bitboard(0);
+    Bitboards bitboards{};
+    MoveValidator::CheckInfo checkInfo{};
+};
+
 class MoveGenerator
 {
 public:

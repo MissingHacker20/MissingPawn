@@ -295,35 +295,16 @@ bool MoveValidator::isSquareAttacked(
     Square square,
     ChessColor attacker)
 {
-    // Cache some bitboards to avoid repeated calls
-    const Bitboard occ = board.getAllOccupancy();
-
-    int sq = static_cast<int>(square);
-    int file = sq % 8;
-    int rank = sq / 8;
-
-    // Pawn attacks (inverse lookup: which pawns attack this square)
-    if (attacker == ChessColor::White) {
-        // White pawns attack from one rank below
-        if (rank > 0) {
-            // Left diagonal attacker: from file+1 (source file < 7)
-            if (file < 7 && board.pieceAt(static_cast<Square>(sq - 7)) == Piece::WhitePawn)
-                return true;
-            // Right diagonal attacker: from file-1 (source file > 0)
-            if (file > 0 && board.pieceAt(static_cast<Square>(sq - 9)) == Piece::WhitePawn)
-                return true;
-        }
-    } else {
-        // Black pawns attack from one rank above
-        if (rank < 7) {
-            // Left diagonal attacker: from file+1 (source file < 7)
-            if (file < 7 && board.pieceAt(static_cast<Square>(sq + 9)) == Piece::BlackPawn)
-                return true;
-            // Right diagonal attacker: from file-1 (source file > 0)
-            if (file > 0 && board.pieceAt(static_cast<Square>(sq + 7)) == Piece::BlackPawn)
-                return true;
-        }
-    }
+    // Pawn attacks use the inverse precomputed masks. This avoids up to two
+    // pieceAt() calls and, unlike arithmetic on square indices, cannot cross
+    // a board edge.
+    const Piece pawn = attacker == ChessColor::White
+        ? Piece::WhitePawn : Piece::BlackPawn;
+    const Bitboard pawnAttackers = attacker == ChessColor::White
+        ? AttackTables::blackPawnAttacks(square)
+        : AttackTables::whitePawnAttacks(square);
+    if (pawnAttackers & board.getBitboard(pawn))
+        return true;
 
     const Bitboard knightAttacks = AttackTables::knightAttacks(square);
     const Piece knight = (attacker == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
@@ -333,6 +314,9 @@ bool MoveValidator::isSquareAttacked(
     const Piece king = (attacker == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
     if (kingAttacks & board.getBitboard(king)) return true;
 
+    // Sliding attacks are the only part that needs full occupancy. Delay this
+    // load until after the cheap leaper/pawn checks above.
+    const Bitboard occ = board.getAllOccupancy();
     const Bitboard rookOrQueen = board.getBitboard(
         (attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook)
         | board.getBitboard(
@@ -925,7 +909,7 @@ void MoveValidator::updatePieceBitboards(
 
 MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, ChessColor side)
 {
-    CheckInfo info;
+    CheckInfo info{};
     info.kingSquare = findKing(board, side);
 
     if (info.kingSquare == Square::None)
@@ -1019,6 +1003,29 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
         }
 
         info.doubleCheck = (countBits(info.checkers) >= 2);
+
+        if (!info.doubleCheck)
+        {
+            info.evasionMask = info.checkers;
+            if (info.checkers)
+            {
+                const Square checker = static_cast<Square>(
+                    std::countr_zero(info.checkers));
+                const Piece checkerPiece = board.pieceAt(checker);
+                const bool slider = checkerPiece == Piece::WhiteBishop ||
+                    checkerPiece == Piece::BlackBishop ||
+                    checkerPiece == Piece::WhiteRook ||
+                    checkerPiece == Piece::BlackRook ||
+                    checkerPiece == Piece::WhiteQueen ||
+                    checkerPiece == Piece::BlackQueen;
+                if (slider)
+                    info.evasionMask |= getBetweenRay(info.kingSquare, checker);
+            }
+        }
+        else
+        {
+            info.evasionMask = 0;
+        }
     }
 
     // Find pinned pieces (our sliders on same ray as king with enemy slider behind)
