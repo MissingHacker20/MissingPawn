@@ -11,6 +11,7 @@
 #include "Engine/MoveOrdering.h"
 #include "Engine/KillerMoves.h"
 #include "Engine/HistoryHeuristic.h"
+#include "Engine/TranspositionTable.h"
 #include "Move/MoveGenerator.h"
 #include "Move/MoveValidator.h"
 #include "Rate/Evaluation.h"
@@ -93,6 +94,16 @@ std::vector<uint64_t> Search::repetitionPath;
 
 bool Search::ponderEnabled = false;
 
+void Search::initTranspositionTable(size_t sizeMB)
+{
+    TranspositionTable::initialize(sizeMB);
+}
+
+void Search::clearTranspositionTable()
+{
+    TranspositionTable::clear();
+}
+
 // RAII guard zapewniający zdjęcie pozycji ze ścieżki przy wyjściu
 // z węzła (niezależnie od tego, którędy następuje return).
 namespace
@@ -158,6 +169,15 @@ Move Search::findBestMove(Board& board, int depth)
     searchStartTime = std::chrono::steady_clock::now();
 
     TimeManager::resetNodeCount();
+
+    // Initialize Transposition Table (only once per search session)
+    static bool ttInitialized = false;
+    if (!ttInitialized)
+    {
+        TranspositionTable::initialize(64);
+        ttInitialized = true;
+    }
+    TranspositionTable::newSearch();
 
     Move bestMove;
     Move completedBestMove;
@@ -226,6 +246,14 @@ Move Search::findBestMove(Board& board, int depth)
     // Iterative Deepening
     //--------------------------------------------------
 
+    // Probe root position in TT for best move
+    Move ttRootMove = Move{};
+    const uint64_t rootKey = board.getZobristKey();
+    if (auto* rootEntry = TranspositionTable::probe(rootKey))
+    {
+        ttRootMove = rootEntry->bestMove;
+    }
+
     for (int currentDepth = 1; currentDepth <= depth; currentDepth++)
     {
         currentIterativeDepth = currentDepth;
@@ -241,10 +269,10 @@ Move Search::findBestMove(Board& board, int depth)
         // filtrowanie make/unmake na każdej głębokości.
         MoveList& moves = rootMoves;
 
-        // Posortuj root z poprzednim bestMove jako TT move (jeśli istnieje).
+        // Posortuj root z TT move (jeśli istnieje).
         // To utrzymuje stabilność, ale nie blokuje silnika - jeśli inny ruch
         // okaże się lepszy, zostanie wybrany (bo przeszukujemy wszystkie ruchy).
-        MoveOrdering::sortMoves(board, moves, currentDepth, 0, bestMove);
+        MoveOrdering::sortMoves(board, moves, currentDepth, 0, ttRootMove);
 
         if (moves.size() == 0)
         {
@@ -368,6 +396,7 @@ Move Search::findBestMove(Board& board, int depth)
         }
 
         std::cout << std::endl;
+        std::cout.flush();
     }
 
     // Wynik przerwanej iteracji nie jest wiarygodny. Zachowujemy wyłącznie
@@ -396,6 +425,7 @@ Move Search::findBestMove(Board& board, int depth)
     {
         std::cout << "bestmove " << bestMove.toUCI() << std::endl;
     }
+    std::cout.flush();
 
     return bestMove;
 }
@@ -418,6 +448,44 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     NodeRepGuard repGuard(nodeKey);
 
+    //--------------------------------------------------
+    // Transposition Table probe in quiescence
+    //--------------------------------------------------
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    Move ttMove{};
+    Bitboards ttBitboards{};
+    bool hasTTBitboards = false;
+
+    if (ttEntry && ttEntry->depth >= 0)
+    {
+        ttMove = ttEntry->bestMove;
+        int ttScore = ttEntry->score;
+
+        if (ttEntry->type == TranspositionTable::NodeType::Exact)
+        {
+            return ttScore;
+        }
+        else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
+        {
+            alpha = std::max(alpha, ttScore);
+        }
+        else if (ttEntry->type == TranspositionTable::NodeType::UpperBound)
+        {
+            beta = std::min(beta, ttScore);
+        }
+
+        if (alpha >= beta)
+        {
+            return ttScore;
+        }
+
+        if (ttEntry->bitboards.allOccupied != 0)
+        {
+            ttBitboards = ttEntry->bitboards;
+            hasTTBitboards = true;
+        }
+    }
+
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
     const MoveValidator::CheckInfo pseudoInfo{};
 
@@ -433,7 +501,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
     // SEE i delta pruning są liczone tylko dla konkretnych bić poniżej;
     // nie wykonuj dodatkowej, pełnej oceny taktycznej na każdym q-node.
-    MoveOrdering::sortMoves(board, moves, 0, ply, Move());
+    MoveOrdering::sortMoves(board, moves, 0, ply, ttMove);
 
     // W szachu nie można zastosować stand-pat: trzeba rozpatrzyć
     // wszystkie legalne odpowiedzi na szacha. Jeśli nie ma ruchów,
@@ -453,7 +521,9 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     else
     {
-        standPat = Evaluation::evaluate(board);
+        standPat = hasTTBitboards
+            ? Evaluation::evaluate(board, ttBitboards)
+            : Evaluation::evaluate(board);
         if (board.getSideToMove() == ChessColor::Black)
         {
             standPat = -standPat;
@@ -545,16 +615,39 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
         board.undoMove(move, undoInfo);
 
-        if (score > alpha)
-        {
-            alpha = score;
-
-            if (alpha >= beta)
+if (score > alpha)
             {
-                break;
+                alpha = score;
+
+                if (alpha >= beta)
+                {
+                    break;
+                }
             }
-        }
     }
+
+    //--------------------------------------------------
+    // Transposition Table store in quiescence
+    //--------------------------------------------------
+    TranspositionTable::NodeType ttType;
+    int storeScore = alpha;
+
+    if (alpha >= beta)
+    {
+        ttType = TranspositionTable::NodeType::LowerBound;
+    }
+    else if (storeScore <= alpha)
+    {
+        ttType = TranspositionTable::NodeType::UpperBound;
+    }
+    else
+    {
+        ttType = TranspositionTable::NodeType::Exact;
+    }
+
+    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
+
+    TranspositionTable::store(nodeKey, 0, storeScore, ttType, Move{}, storeBitboards);
 
     return alpha;
 }
@@ -586,6 +679,57 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         return 0;
     }
     NodeRepGuard repGuard(nodeKey);
+
+    //--------------------------------------------------
+    // Transposition Table probe
+    //--------------------------------------------------
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    Move ttMove = Move{};
+    Bitboards ttBitboards{};
+    bool hasTTBitboards = false;
+
+    if (ttEntry)
+    {
+        ttMove = ttEntry->bestMove;
+        if (ttEntry->depth >= depth)
+        {
+            int ttScore = ttEntry->score;
+
+            // Adjust mate scores for ply
+            if (ttScore > Search::MateScore - Search::MaxPly)
+            {
+                ttScore -= ply;
+            }
+            else if (ttScore < -Search::MateScore + Search::MaxPly)
+            {
+                ttScore += ply;
+            }
+
+            if (ttEntry->type == TranspositionTable::NodeType::Exact)
+            {
+                return ttScore;
+            }
+            else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
+            {
+                alpha = std::max(alpha, ttScore);
+            }
+            else if (ttEntry->type == TranspositionTable::NodeType::UpperBound)
+            {
+                beta = std::min(beta, ttScore);
+            }
+
+            if (alpha >= beta)
+            {
+                return ttScore;
+            }
+        }
+        // Store bitboards for potential use in evaluation
+        if (ttEntry->bitboards.allOccupied != 0)
+        {
+            ttBitboards = ttEntry->bitboards;
+            hasTTBitboards = true;
+        }
+    }
 
     //--------------------------------------------------
     // Generate moves once (reused for terminal detection and search)
@@ -637,7 +781,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
-    MoveOrdering::sortMoves(board, moves, depth, ply, Move());
+    MoveOrdering::sortMoves(board, moves, depth, ply, ttMove);
 
     Move bestMove;
     int bestScore = -Infinity;
@@ -784,6 +928,40 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             break;
         }
     }
+
+    //--------------------------------------------------
+    // Transposition Table store
+    //--------------------------------------------------
+    TranspositionTable::NodeType ttType;
+    int storeScore = bestScore;
+
+    // Adjust mate scores for storage (relative to root)
+    if (storeScore > Search::MateScore - Search::MaxPly)
+    {
+        storeScore += ply;
+    }
+    else if (storeScore < -Search::MateScore + Search::MaxPly)
+    {
+        storeScore -= ply;
+    }
+
+    if (bestScore <= alpha)
+    {
+        ttType = TranspositionTable::NodeType::UpperBound;
+    }
+    else if (bestScore >= beta)
+    {
+        ttType = TranspositionTable::NodeType::LowerBound;
+    }
+    else
+    {
+        ttType = TranspositionTable::NodeType::Exact;
+    }
+
+    // Use stored bitboards if available, otherwise compute fresh
+    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
+
+    TranspositionTable::store(nodeKey, depth, storeScore, ttType, bestMove, storeBitboards);
 
     return bestScore;
 }

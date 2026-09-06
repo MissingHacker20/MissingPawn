@@ -219,7 +219,9 @@ void UCI::commandIsReady()
 
 void UCI::commandQuit()
 {
-    TimeManager::stop();
+    // Nie wywołujemy TimeManager::stop() tutaj - niech search
+    // się zakończy naturalnie (gdy osiągnie głębokość lub upłynie czas).
+    // Wątek zostanie dołączony na końcu pętli run().
 
     if (searchThread.joinable())
     {
