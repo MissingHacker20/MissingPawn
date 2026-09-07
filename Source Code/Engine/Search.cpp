@@ -151,8 +151,10 @@ bool reconstructPVFromTT(Board& board, int ply, int depth)
         if (!moveLegal)
             break;
 
-        // Store move in PV table
-        Search::pvTable[currentPly][0] = pvEntry->bestMove;
+        // Store the whole reconstructed line horizontally in the row belonging
+        // to the node where reconstruction started.  The search PV convention
+        // is pvTable[ply][0..pvLength[ply)-1], not one move per row.
+        Search::pvTable[ply][pvNodes] = pvEntry->bestMove;
 
         // Make the move on temp board
         UndoInfo undoInfo;
@@ -167,16 +169,12 @@ bool reconstructPVFromTT(Board& board, int ply, int depth)
             break;
     }
 
-    // Set PV lengths
-    for (int i = ply; i < currentPly; ++i)
-    {
-        Search::pvLength[i] = currentPly - i;
-    }
-    // Clear remaining
-    for (int i = currentPly; i < Search::MaxPly; ++i)
-    {
-        Search::pvLength[i] = 0;
-    }
+    // Publish only the line reconstructed for this node.  Do not assign
+    // lengths to descendant rows: those rows were not populated by this
+    // routine and the caller expects the PV to be contiguous in one row.
+    Search::pvLength[ply] = pvNodes;
+    for (int i = pvNodes; i < Search::MaxPly; ++i)
+        Search::pvTable[ply][i] = Move{};
 
     return pvNodes > 0;
 }

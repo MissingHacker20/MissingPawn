@@ -407,37 +407,21 @@ void MoveGenerator::generatePawnMoves(
                     continue;
                 }
 
-                // Check if en passant is allowed by pin/eviction constraints
-                bool epAllowed = true;
-                if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-                {
-                    // Piece is pinned, check if en passant is along pin ray
-                    if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(enPassant))))
-                    {
-                        epAllowed = false;
-                    }
-                }
-                else if (checkInfo.inCheck)
-                {
-                    // In check, en passant only allowed if it captures a checker
-                    // The captured pawn is not on the en passant square, it's beside it
-                    // So we need to check if the captured pawn is a checker
-                    if (!(checkInfo.checkers & (1ULL << static_cast<int>(capturedSquare))))
-                    {
-                        epAllowed = false;
-                    }
-                }
-
-                if (epAllowed)
-                {
-                    moveList.add(
-                        Move(
-                            from,
-                            enPassant,
-                            pawn,
-                            MoveFlag::EnPassant,
-                            capturedPawn));
-                }
+                // En passant changes two occupied squares: the moving pawn
+                // leaves `from` and the captured pawn disappears from
+                // `capturedSquare`.  Therefore neither the ordinary pin ray
+                // test nor the normal check evasion mask is sufficient here.
+                // Generate the pseudo-legal EP move and let the virtual
+                // position validator decide whether the king is safe.  This
+                // preserves EP evasions that capture a checker, block a ray,
+                // or uncover/close a line by removing the adjacent pawn.
+                moveList.add(
+                    Move(
+                        from,
+                        enPassant,
+                        pawn,
+                        MoveFlag::EnPassant,
+                        capturedPawn));
             }
         }
     }
