@@ -100,11 +100,8 @@ bool safeForNullMove(const Board& board, ChessColor side)
 
 // Reconstruct PV from transposition table by following bestMove chain.
 // Returns true if PV was successfully reconstructed, false otherwise.
-bool reconstructPVFromTT(Board& board, int ply, int depth, TranspositionTable::Entry* entry)
+bool reconstructPVFromTT(Board& board, int ply, int depth)
 {
-    if (!entry || entry->type != TranspositionTable::NodeType::Exact || entry->bestMove.from == Square::None)
-        return false;
-
     // Safety: limit PV reconstruction to avoid infinite loops
     const int maxPvNodes = depth;
     int pvNodes = 0;
@@ -129,7 +126,11 @@ bool reconstructPVFromTT(Board& board, int ply, int depth, TranspositionTable::E
 
         // Probe TT for this position
         TranspositionTable::Entry* pvEntry = TranspositionTable::probe(key);
-        if (!pvEntry || pvEntry->type != TranspositionTable::NodeType::Exact || pvEntry->bestMove.from == Square::None)
+        const int remainingDepth = depth - pvNodes;
+        if (!pvEntry ||
+            pvEntry->type != TranspositionTable::NodeType::Exact ||
+            pvEntry->depth < remainingDepth ||
+            pvEntry->bestMove.from == Square::None)
             break;
 
         // Validate move is legal in current position
@@ -489,23 +490,12 @@ Move Search::findBestMove(Board& board, int depth)
                   << " pv";
 
         // Print PV: current iteration + completed iteration to fill up to depth
-        int pvPrinted = 0;
-        for (int i = 0; i < pvLength[0]; i++)
+        for (int i = 0; i < pvLength[0] && i < currentDepth; i++)
         {
             if (pvTable[0][i].from == Square::None)
                 break;
             std::cout << " " << pvTable[0][i].toUCI();
-            pvPrinted++;
         }
-        // Fill remaining from completed PV (full iteration)
-        for (int i = pvPrinted; i < completedPvLength[0] && pvPrinted < currentDepth; i++)
-        {
-            if (completedPvTable[0][i].from == Square::None)
-                break;
-            std::cout << " " << completedPvTable[0][i].toUCI();
-            pvPrinted++;
-        }
-
         std::cout << std::endl;
         std::cout.flush();
     }
@@ -818,9 +808,14 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
             if (ttEntry->type == TranspositionTable::NodeType::Exact)
             {
-                // Reconstruct PV from TT for Exact entries with sufficient depth
-                reconstructPVFromTT(board, ply, depth, ttEntry);
-                return ttScore;
+                // An exact TT score is sufficient for a cut node, but a PV
+                // node must search its moves to build a fresh principal line.
+                const bool pvNode = (beta - alpha > 1);
+                if (!pvNode)
+                {
+                    return ttScore;
+                }
+                reconstructPVFromTT(board, ply, depth);
             }
             else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
             {

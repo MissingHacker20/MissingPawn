@@ -390,6 +390,23 @@ void MoveGenerator::generatePawnMoves(
 
             if (getBit(attacks, enPassant))
             {
+                const int enPassantFile = static_cast<int>(enPassant) % 8;
+                const int enPassantRank = static_cast<int>(enPassant) / 8;
+                const int capturedRank =
+                    side == ChessColor::White ? enPassantRank - 1 : enPassantRank + 1;
+                const Square capturedSquare =
+                    static_cast<Square>(capturedRank * 8 + enPassantFile);
+                const Piece capturedPawn =
+                    side == ChessColor::White ? Piece::BlackPawn : Piece::WhitePawn;
+
+                // A FEN may contain a stale EP square. Do not manufacture an
+                // EP move unless the pawn that would be captured is present.
+                if (capturedRank < 0 || capturedRank >= 8 ||
+                    board.pieceAt(capturedSquare) != capturedPawn)
+                {
+                    continue;
+                }
+
                 // Check if en passant is allowed by pin/eviction constraints
                 bool epAllowed = true;
                 if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
@@ -403,12 +420,6 @@ void MoveGenerator::generatePawnMoves(
                 else if (checkInfo.inCheck)
                 {
                     // In check, en passant only allowed if it captures a checker
-                    int enPassantFile = static_cast<int>(enPassant) % 8;
-                    int enPassantRank = static_cast<int>(enPassant) / 8;
-                    int capturedFile = enPassantFile;
-                    int capturedRank = (side == ChessColor::White) ? enPassantRank - 1 : enPassantRank + 1;
-                    Square capturedSquare = static_cast<Square>(capturedRank * 8 + capturedFile);
-
                     // The captured pawn is not on the en passant square, it's beside it
                     // So we need to check if the captured pawn is a checker
                     if (!(checkInfo.checkers & (1ULL << static_cast<int>(capturedSquare))))
@@ -419,7 +430,6 @@ void MoveGenerator::generatePawnMoves(
 
                 if (epAllowed)
                 {
-                    Piece capturedPawn = (side == ChessColor::White) ? Piece::BlackPawn : Piece::WhitePawn;
                     moveList.add(
                         Move(
                             from,
@@ -726,30 +736,12 @@ void MoveGenerator::generateKingMoves(
         // Remove squares occupied by our own pieces
         attacks &= ~ownOccupancy;
 
-        // Remove squares attacked by enemy (unless capturing that piece)
-        Bitboard safeSquares = attacks & ~checkInfo.enemyAttacks;
-
-        // Add back squares where we capture enemy pieces (even if they attack that square)
-Bitboard enemyOccupancy = bitboards.occupied[sideIndex(MoveValidator::oppositeColor(side))];
-        Bitboard capturableEnemy = safeSquares | (attacks & enemyOccupancy);
-
-        // Additional restriction: if in check, king can only move to squares that evade check
-        if (checkInfo.inCheck)
-        {
-            // King moves are only allowed to squares not attacked by enemy
-            // (except when capturing the checking piece)
-            Bitboard evasionSquares = ~checkInfo.enemyAttacks;
-
-            // Add squares where we capture checking pieces
-            Bitboard checkers = checkInfo.checkers;
-            while (checkers)
-            {
-                Square checkerSq = popLeastSignificantBit(checkers);
-                evasionSquares |= (1ULL << static_cast<int>(checkerSq));
-            }
-
-            capturableEnemy &= evasionSquares;
-        }
+        // Do not reject king captures using the attack map from the original
+        // position. When the king captures, the captured piece disappears and
+        // may have been the only blocker or attacker on the destination square.
+        // isMoveLegal() performs the definitive virtual-position check after
+        // generation, so generate every non-own king destination here.
+        Bitboard capturableEnemy = attacks;
 
         while (capturableEnemy)
         {
