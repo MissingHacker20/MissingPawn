@@ -86,8 +86,8 @@ bool isEnPassantValid(const Board& board, Square epSquare)
     // Sprawdź czy pionek przeciwnika stoi na właściwym polu (za polem EP)
     const int capturedRank =
         (side == ChessColor::White)
-            ? epRank + 1
-            : epRank - 1;
+            ? epRank - 1
+            : epRank + 1;
 
     if (capturedRank < 0 || capturedRank >= 8)
     {

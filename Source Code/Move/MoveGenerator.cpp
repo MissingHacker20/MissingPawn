@@ -151,57 +151,14 @@ void MoveGenerator::generatePawnMoves(
                 bool squareAllowed = !checkInfo.inCheck ||
                     getBit(checkInfo.evasionMask, to);
 
-                // Check if this square is allowed by pin/eviction constraints
+                // Evasion mask already contains the only legal destination squares
+                // while in check. Apply the pin restriction in addition to it.
                 if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
                 {
-                    // Piece is pinned, check if move is along pin ray
-                    if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(to))))
+                    if (!(checkInfo.pinRays[static_cast<int>(from)] &
+                          (1ULL << static_cast<int>(to))))
                     {
                         squareAllowed = false;
-                    }
-                }
-                else if (checkInfo.inCheck)
-                {
-                    // In check, check if this is an evasion move
-                    if (!(checkInfo.enemyAttacks & (1ULL << static_cast<int>(to))) &&
-                        !(checkInfo.checkers & (1ULL << static_cast<int>(to))))
-                    {
-                        // Not a capture of checker or block - only king moves allowed in double check
-                        if (checkInfo.doubleCheck)
-                        {
-                            squareAllowed = false;
-                        }
-                        // For single check, non-capture non-block moves are not allowed
-                        // unless it's a king move (handled separately)
-                        if (!checkInfo.doubleCheck)
-                        {
-                            // Check if it's a block move
-                            bool isBlock = false;
-                            Bitboard checkers = checkInfo.checkers;
-                            while (checkers)
-                            {
-                                Square checkerSq = popLeastSignificantBit(checkers);
-                                if (getBit(getBetweenRay(from, to), checkerSq))
-                                {
-                                    isBlock = true;
-                                    break;
-                                }
-                            }
-                            if (!isBlock)
-                            {
-                                squareAllowed = false;
-                            }
-                        }
-                    }
-                    // If it's a capture, check if it captures a checker
-                    else if (board.pieceAt(to) != Piece::None &&
-                            getPieceColor(board.pieceAt(to)) != side)
-                    {
-                        // Capture - only allowed if it captures a checker
-                        if (!(checkInfo.checkers & (1ULL << static_cast<int>(to))))
-                        {
-                            squareAllowed = false;
-                        }
                     }
                 }
 
@@ -259,30 +216,6 @@ void MoveGenerator::generatePawnMoves(
                                         doublePushAllowed = false;
                                     }
                                 }
-                                else if (checkInfo.inCheck)
-                                {
-                                    // In check, double push only allowed if it's an evasion
-                                    // (capture of checker or block)
-                                    bool isEvasion = false;
-
-                                    // Check if it captures a checker (impossible for double push to same file)
-                                    // Check if it's a block
-                                    Bitboard checkers = checkInfo.checkers;
-                                    while (checkers)
-                                    {
-                                        Square checkerSq = popLeastSignificantBit(checkers);
-                                        if (getBit(getBetweenRay(from, second), checkerSq))
-                                        {
-                                            isEvasion = true;
-                                            break;
-                                        }
-                                    }
-
-                                    if (!isEvasion)
-                                    {
-                                        doublePushAllowed = false;
-                                    }
-                                }
 
                                 if (doublePushAllowed)
                                 {
@@ -329,7 +262,7 @@ void MoveGenerator::generatePawnMoves(
                     captureAllowed = false;
                 }
             }
-            else if (checkInfo.inCheck)
+            if (checkInfo.inCheck)
             {
                 // In check, only captures of checkers are allowed (or blocks, but pawns can't block with capture)
                 if (!(checkInfo.checkers & (1ULL << static_cast<int>(to))))
@@ -462,7 +395,7 @@ void MoveGenerator::generateKnightMoves(
             // Piece is pinned - knights can't be pinned in chess, but handle anyway
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // A knight can only capture the checker; it cannot block a ray.
             attacks &= checkInfo.evasionMask & checkInfo.checkers;
@@ -514,7 +447,7 @@ void MoveGenerator::generateBishopMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
@@ -584,7 +517,7 @@ void MoveGenerator::generateRookMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
@@ -654,7 +587,7 @@ void MoveGenerator::generateQueenMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
