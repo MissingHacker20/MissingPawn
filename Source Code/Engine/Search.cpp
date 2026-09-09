@@ -100,7 +100,7 @@ bool safeForNullMove(const Board& board, ChessColor side)
 
 // Reconstruct PV from transposition table by following bestMove chain.
 // Returns true if PV was successfully reconstructed, false otherwise.
-bool reconstructPVFromTT(Board& board, int ply, int depth)
+[[maybe_unused]] bool reconstructPVFromTT(Board& board, int ply, int depth)
 {
     // Safety: limit PV reconstruction to avoid infinite loops
     const int maxPvNodes = depth;
@@ -126,10 +126,7 @@ bool reconstructPVFromTT(Board& board, int ply, int depth)
 
         // Probe TT for this position
         TranspositionTable::Entry* pvEntry = TranspositionTable::probe(key);
-        const int remainingDepth = depth - pvNodes;
         if (!pvEntry ||
-            pvEntry->type != TranspositionTable::NodeType::Exact ||
-            pvEntry->depth < remainingDepth ||
             pvEntry->bestMove.from == Square::None)
             break;
 
@@ -562,11 +559,10 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         ttMove = ttEntry->bestMove;
         int ttScore = scoreFromTT(ttEntry->score, ply);
 
-        if (ttEntry->type == TranspositionTable::NodeType::Exact)
-        {
-            return ttScore;
-        }
-        else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
+        // Use TT score for bound updates only. Don't return exact score
+        // immediately because quiescence TT entries don't store bestMove
+        // (they use Move{}), which would break PV reconstruction.
+        if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
         {
             alpha = std::max(alpha, ttScore);
         }
@@ -574,6 +570,8 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         {
             beta = std::min(beta, ttScore);
         }
+        // For Exact entries in quiescence, we update both bounds but
+        // continue searching to build PV if needed.
 
         if (alpha >= beta)
         {
@@ -797,6 +795,11 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     Bitboards ttBitboards{};
     bool hasTTBitboards = false;
 
+    // Determine if this is a PV node based on original window.
+    // Must be done BEFORE TT bound updates, because bounds can narrow
+    // the window and incorrectly make a PV node look like a cut node.
+    const bool pvNode = (beta - alpha > 1);
+
     if (ttEntry)
     {
         ttMove = ttEntry->bestMove;
@@ -808,12 +811,13 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             {
                 // An exact TT score is sufficient for a cut node, but a PV
                 // node must search its moves to build a fresh principal line.
-                const bool pvNode = (beta - alpha > 1);
+                // Don't try to reconstruct PV from TT at PV nodes - child
+                // positions haven't been searched at this depth yet.
                 if (!pvNode)
                 {
                     return ttScore;
                 }
-                reconstructPVFromTT(board, ply, depth);
+                // PV node: use TT move for ordering (via ttMove), but search to build PV
             }
             else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
             {
@@ -824,7 +828,10 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                 beta = std::min(beta, ttScore);
             }
 
-            if (alpha >= beta)
+            // In PV nodes, don't cut off based on bounds alone - we need to
+            // search moves to build the principal variation. Only cut in
+            // non-PV nodes (cut nodes).
+            if (!pvNode && alpha >= beta)
             {
                 return ttScore;
             }
