@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MissingPawn
-    VERSION 2
+    VERSION 3
     DESCRIPTION "MissingPawn Chess Engine"
     LANGUAGES CXX RC
 )

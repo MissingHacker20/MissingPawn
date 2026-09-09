@@ -204,7 +204,7 @@ void UCI::run()
 
 void UCI::commandUCI()
 {
-    std::cout << "id name MissingPawn v2" << std::endl;
+    std::cout << "id name MissingPawn v3" << std::endl;
     std::cout << "id author Kacper Wieczorek" << std::endl;
     std::cout << "option name Hash type spin default 64 min 1 max 4096" << std::endl;
     std::cout << "option name Ponder type check default false" << std::endl;

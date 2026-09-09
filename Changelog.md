@@ -33,3 +33,6 @@
 - new UCI options and book command
 - tactical evaluation
 - updated move generator
+
+## MissingPawn v3
+- TT

@@ -1,8 +1,9 @@
-# MissingPawn
+# MissingPawn - Open-Source Chess Engine
 
-> A modern UCI chess engine focused on the strength of pawn structure.
+> A modern UCI chess engine focused on pawn structure, positional restriction and experimental evaluation.
 
 ## About
+![MissingPawn logo](assets/missingpawn-logo.png)
 
 MissingPawn is an open-source chess engine implementing the **Universal Chess Interface (UCI)** protocol. It is designed to provide strong play while serving as a platform for experimenting with modern search algorithms and evaluation techniques.
 
