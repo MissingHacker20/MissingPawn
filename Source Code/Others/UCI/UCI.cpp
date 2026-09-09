@@ -11,12 +11,15 @@
 #include "Others/UCI/UCIOptionParser.h"
 #include "OpeningBooks/OpeningBooks.h"
 #include "Move/AttackTables.h"
+#include "Move/MoveGenerator.h"
+#include "Move/MoveValidator.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 
 Board UCI::board;
@@ -30,6 +33,45 @@ std::atomic<bool> UCI::searchStarted{false};
 // Globalna książka otwarć
 static std::vector<BookEntry> g_openingBook;
 static bool g_openingBookEnabled = false;
+
+namespace
+{
+uint64_t perft(Board& board, int depth)
+{
+    if (depth == 0)
+        return 1;
+
+    MoveList moves;
+    MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
+    uint64_t nodes = 0;
+    for (int i = 0; i < moves.size(); ++i)
+    {
+        UndoInfo undo;
+        board.makeMove(moves[i], undo);
+        nodes += perft(board, depth - 1);
+        board.undoMove(moves[i], undo);
+    }
+    return nodes;
+}
+
+void perftDivide(Board& board, int depth)
+{
+    MoveList moves;
+    MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
+    uint64_t total = 0;
+    for (int i = 0; i < moves.size(); ++i)
+    {
+        UndoInfo undo;
+        board.makeMove(moves[i], undo);
+        const uint64_t nodes = perft(board, depth - 1);
+        board.undoMove(moves[i], undo);
+        total += nodes;
+        std::cout << "info string divide " << moves[i].toUCI()
+                  << " nodes " << nodes << std::endl;
+    }
+    std::cout << "info string divide total " << total << std::endl;
+}
+}
 
 bool UCI::executeCommand(
     const std::string& command)
@@ -88,6 +130,44 @@ bool UCI::executeCommand(
                 board,
                 tokens);
             std::cout << "info string Position updated." << std::endl;
+        }
+        return true;
+    }
+
+    if (commandName == "perft")
+    {
+        if (tokens.size() < 2 || tokens.size() > 3)
+        {
+            std::cout << "info string Usage: perft <depth> [divide]" << std::endl;
+        }
+        else
+        {
+            try
+            {
+                const int depth = std::stoi(tokens[1]);
+                if (depth < 0 || depth > 8)
+                    throw std::out_of_range("depth");
+                Board testBoard = board;
+                const auto start = std::chrono::steady_clock::now();
+                if (tokens.size() == 3 && tokens[2] == "divide")
+                {
+                    perftDivide(testBoard, depth);
+                    return true;
+                }
+                const uint64_t nodes = perft(testBoard, depth);
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                const uint64_t nps = elapsed > 0
+                    ? nodes * 1000 / static_cast<uint64_t>(elapsed) : 0;
+                std::cout << "info string perft depth " << depth
+                          << " nodes " << nodes
+                          << " time " << elapsed
+                          << " nps " << nps << std::endl;
+            }
+            catch (const std::exception&)
+            {
+                std::cout << "info string Invalid perft depth." << std::endl;
+            }
         }
         return true;
     }
@@ -164,7 +244,7 @@ bool UCI::executeCommand(
 
     if (commandName == "help")
     {
-        std::cout << "info string Supported UCI commands: uci, isready, position, go, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
+        std::cout << "info string Supported commands: uci, isready, position, perft, go, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
         return true;
     }
 
@@ -219,7 +299,9 @@ void UCI::commandIsReady()
 
 void UCI::commandQuit()
 {
-    TimeManager::stop();
+    // Nie wywołujemy TimeManager::stop() tutaj - niech search
+    // się zakończy naturalnie (gdy osiągnie głębokość lub upłynie czas).
+    // Wątek zostanie dołączony na końcu pętli run().
 
     if (searchThread.joinable())
     {

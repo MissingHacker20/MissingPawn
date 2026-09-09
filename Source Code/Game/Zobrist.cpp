@@ -86,8 +86,8 @@ bool isEnPassantValid(const Board& board, Square epSquare)
     // Sprawdź czy pionek przeciwnika stoi na właściwym polu (za polem EP)
     const int capturedRank =
         (side == ChessColor::White)
-            ? epRank + 1
-            : epRank - 1;
+            ? epRank - 1
+            : epRank + 1;
 
     if (capturedRank < 0 || capturedRank >= 8)
     {
@@ -100,7 +100,9 @@ bool isEnPassantValid(const Board& board, Square epSquare)
         return false;
     }
 
-    // Sprawdź czy pionek strony na ruchu może wejść na epSquare (odwrotna maska ataku)
+    // Find pawns of the side to move that attack the EP destination.
+    // The inverse attack mask is used because the table is indexed by the
+    // destination square, not by the pawn's origin square.
     Bitboard attackers = (side == ChessColor::White)
         ? AttackTables::blackPawnAttacks(epSquare)
         : AttackTables::whitePawnAttacks(epSquare);

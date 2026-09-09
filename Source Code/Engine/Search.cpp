@@ -11,6 +11,7 @@
 #include "Engine/MoveOrdering.h"
 #include "Engine/KillerMoves.h"
 #include "Engine/HistoryHeuristic.h"
+#include "Engine/TranspositionTable.h"
 #include "Move/MoveGenerator.h"
 #include "Move/MoveValidator.h"
 #include "Rate/Evaluation.h"
@@ -68,6 +69,24 @@ int nonPawnMaterialCount(const Board& board)
            countBits(board.getBitboard(Piece::BlackQueen));
 }
 
+int scoreToTT(int score, int ply)
+{
+    if (score > Search::MateScore - Search::MaxPly)
+        return score + ply;
+    if (score < -Search::MateScore + Search::MaxPly)
+        return score - ply;
+    return score;
+}
+
+int scoreFromTT(int score, int ply)
+{
+    if (score > Search::MateScore - Search::MaxPly)
+        return score - ply;
+    if (score < -Search::MateScore + Search::MaxPly)
+        return score + ply;
+    return score;
+}
+
 bool safeForNullMove(const Board& board, ChessColor side)
 {
     const Piece rook = side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook;
@@ -75,8 +94,86 @@ bool safeForNullMove(const Board& board, ChessColor side)
     const bool hasMajor = board.getBitboard(rook) != 0 || board.getBitboard(queen) != 0;
 
     // Null move is unreliable in sparse minor/pawn endings: zugzwang is common
-    // and passing is not a realistic legal option there.
+    // and passing is not a realistic realistic option there.
     return hasMajor || nonPawnMaterialCount(board) >= 4;
+}
+
+// Reconstruct PV from transposition table by following bestMove chain.
+// Returns true if PV was successfully reconstructed, false otherwise.
+[[maybe_unused]] bool reconstructPVFromTT(Board& board, int ply, int depth)
+{
+    // Safety: limit PV reconstruction to avoid infinite loops
+    const int maxPvNodes = depth;
+    int pvNodes = 0;
+    uint64_t visitedKeys[Search::MaxPly];
+    int visitedCount = 0;
+
+    // Start from the current position
+    Board tempBoard = board;
+    int currentPly = ply;
+
+    while (pvNodes < maxPvNodes && currentPly < Search::MaxPly - 1)
+    {
+        uint64_t key = tempBoard.getZobristKey();
+
+        // Cycle detection
+        for (int i = 0; i < visitedCount; ++i)
+        {
+            if (visitedKeys[i] == key)
+                return false;
+        }
+        visitedKeys[visitedCount++] = key;
+
+        // Probe TT for this position
+        TranspositionTable::Entry* pvEntry = TranspositionTable::probe(key);
+        if (!pvEntry ||
+            pvEntry->bestMove.from == Square::None)
+            break;
+
+        // Validate move is legal in current position
+        MoveValidator::CheckInfo checkInfo{};
+        MoveList legalMoves;
+        MoveGenerator::generateMoves(tempBoard, legalMoves, checkInfo);
+
+        bool moveLegal = false;
+        for (int i = 0; i < legalMoves.size(); ++i)
+        {
+            if (legalMoves[i] == pvEntry->bestMove)
+            {
+                moveLegal = true;
+                break;
+            }
+        }
+
+        if (!moveLegal)
+            break;
+
+        // Store the whole reconstructed line horizontally in the row belonging
+        // to the node where reconstruction started.  The search PV convention
+        // is pvTable[ply][0..pvLength[ply)-1], not one move per row.
+        Search::pvTable[ply][pvNodes] = pvEntry->bestMove;
+
+        // Make the move on temp board
+        UndoInfo undoInfo;
+        tempBoard.makeMove(pvEntry->bestMove, undoInfo);
+
+        // Continue to next ply
+        currentPly++;
+        pvNodes++;
+
+        // If we reached a terminal node or depth 0, stop
+        if (pvNodes >= depth)
+            break;
+    }
+
+    // Publish only the line reconstructed for this node.  Do not assign
+    // lengths to descendant rows: those rows were not populated by this
+    // routine and the caller expects the PV to be contiguous in one row.
+    Search::pvLength[ply] = pvNodes;
+    for (int i = pvNodes; i < Search::MaxPly; ++i)
+        Search::pvTable[ply][i] = Move{};
+
+    return pvNodes > 0;
 }
 }
 
@@ -92,6 +189,16 @@ std::vector<uint64_t> Search::repetitionHistory;
 std::vector<uint64_t> Search::repetitionPath;
 
 bool Search::ponderEnabled = false;
+
+void Search::initTranspositionTable(size_t sizeMB)
+{
+    TranspositionTable::initialize(sizeMB);
+}
+
+void Search::clearTranspositionTable()
+{
+    TranspositionTable::clear();
+}
 
 // RAII guard zapewniający zdjęcie pozycji ze ścieżki przy wyjściu
 // z węzła (niezależnie od tego, którędy następuje return).
@@ -158,6 +265,15 @@ Move Search::findBestMove(Board& board, int depth)
     searchStartTime = std::chrono::steady_clock::now();
 
     TimeManager::resetNodeCount();
+
+    // Initialize Transposition Table (only once per search session)
+    static bool ttInitialized = false;
+    if (!ttInitialized)
+    {
+        TranspositionTable::initialize(64);
+        ttInitialized = true;
+    }
+    TranspositionTable::newSearch();
 
     Move bestMove;
     Move completedBestMove;
@@ -226,6 +342,14 @@ Move Search::findBestMove(Board& board, int depth)
     // Iterative Deepening
     //--------------------------------------------------
 
+    // Probe root position in TT for best move
+    Move ttRootMove = Move{};
+    const uint64_t rootKey = board.getZobristKey();
+    if (auto* rootEntry = TranspositionTable::probe(rootKey))
+    {
+        ttRootMove = rootEntry->bestMove;
+    }
+
     for (int currentDepth = 1; currentDepth <= depth; currentDepth++)
     {
         currentIterativeDepth = currentDepth;
@@ -241,10 +365,10 @@ Move Search::findBestMove(Board& board, int depth)
         // filtrowanie make/unmake na każdej głębokości.
         MoveList& moves = rootMoves;
 
-        // Posortuj root z poprzednim bestMove jako TT move (jeśli istnieje).
+        // Posortuj root z TT move (jeśli istnieje).
         // To utrzymuje stabilność, ale nie blokuje silnika - jeśli inny ruch
         // okaże się lepszy, zostanie wybrany (bo przeszukujemy wszystkie ruchy).
-        MoveOrdering::sortMoves(board, moves, currentDepth, 0, bestMove);
+        MoveOrdering::sortMoves(board, moves, currentDepth, 0, ttRootMove);
 
         if (moves.size() == 0)
         {
@@ -295,13 +419,12 @@ Move Search::findBestMove(Board& board, int depth)
 
                 // Store PV at root: bestMove + PV from child
                 pvTable[0][0] = bestMove;
-                int childPly = 1;
-                for (int i = 0; i < pvLength[1]; i++)
+                const int childLength = std::max(0, std::min(pvLength[1], MaxPly - 1));
+                for (int i = 0; i < childLength && i + 1 < MaxPly; ++i)
                 {
-                    pvTable[0][childPly] = pvTable[1][i];
-                    childPly++;
+                    pvTable[0][i + 1] = pvTable[1][i];
                 }
-                pvLength[0] = childPly;
+                pvLength[0] = 1 + childLength;
             }
 
             alpha = std::max(alpha, score);
@@ -328,6 +451,17 @@ Move Search::findBestMove(Board& board, int depth)
         completedBestMove = bestMove;
         completedDepth = currentDepth;
 
+        // The root is searched outside negamax, so publish its completed
+        // result explicitly. This makes the root TT move useful on the next
+        // iterative search without storing interrupted iterations.
+        TranspositionTable::store(
+            rootKey,
+            currentDepth,
+            scoreToTT(bestScore, 0),
+            TranspositionTable::NodeType::Exact,
+            bestMove,
+            Bitboards::compute(board, true));
+
         //--------------------------------------------------
         // UCI info output using completed PV table
         //--------------------------------------------------
@@ -349,25 +483,16 @@ Move Search::findBestMove(Board& board, int depth)
                   << " time " << elapsed
                   << " pv";
 
-        // Print PV: current iteration + completed iteration to fill up to depth
-        int pvPrinted = 0;
-        for (int i = 0; i < pvLength[0]; i++)
+        // Print only the moves actually present in the current root PV.
+        const int printablePvLength = std::min(pvLength[0], currentDepth);
+        for (int i = 0; i < printablePvLength; ++i)
         {
             if (pvTable[0][i].from == Square::None)
                 break;
             std::cout << " " << pvTable[0][i].toUCI();
-            pvPrinted++;
         }
-        // Fill remaining from completed PV (full iteration)
-        for (int i = pvPrinted; i < completedPvLength[0] && pvPrinted < currentDepth; i++)
-        {
-            if (completedPvTable[0][i].from == Square::None)
-                break;
-            std::cout << " " << completedPvTable[0][i].toUCI();
-            pvPrinted++;
-        }
-
         std::cout << std::endl;
+        std::cout.flush();
     }
 
     // Wynik przerwanej iteracji nie jest wiarygodny. Zachowujemy wyłącznie
@@ -396,12 +521,15 @@ Move Search::findBestMove(Board& board, int depth)
     {
         std::cout << "bestmove " << bestMove.toUCI() << std::endl;
     }
+    std::cout.flush();
 
     return bestMove;
 }
 
 int Search::quiesce(Board& board, int alpha, int beta, int ply)
 {
+    const int originalAlpha = alpha;
+    const int originalBeta = beta;
     TimeManager::incrementNodeCount();
 
     if (shouldStopSearch())
@@ -418,6 +546,50 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     NodeRepGuard repGuard(nodeKey);
 
+    //--------------------------------------------------
+    // Transposition Table probe in quiescence
+    //--------------------------------------------------
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    Move ttMove{};
+    Bitboards ttBitboards{};
+    bool hasTTBitboards = false;
+
+    // A quiescence node can contribute captures to the PV.  Reset its row
+    // here because qsearch may be entered more than once for the same ply
+    // during a PVS/LMR re-search.
+    pvLength[ply] = 0;
+
+    if (ttEntry && ttEntry->depth == 0)
+    {
+        ttMove = ttEntry->bestMove;
+        int ttScore = scoreFromTT(ttEntry->score, ply);
+
+        // Use TT score for bound updates only. Don't return exact score
+        // immediately because quiescence TT entries don't store bestMove
+        // (they use Move{}), which would break PV reconstruction.
+        if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
+        {
+            alpha = std::max(alpha, ttScore);
+        }
+        else if (ttEntry->type == TranspositionTable::NodeType::UpperBound)
+        {
+            beta = std::min(beta, ttScore);
+        }
+        // For Exact entries in quiescence, we update both bounds but
+        // continue searching to build PV if needed.
+
+        if (alpha >= beta)
+        {
+            return ttScore;
+        }
+
+        if (ttEntry->bitboards.allOccupied != 0)
+        {
+            ttBitboards = ttEntry->bitboards;
+            hasTTBitboards = true;
+        }
+    }
+
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
     const MoveValidator::CheckInfo pseudoInfo{};
 
@@ -433,7 +605,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
     // SEE i delta pruning są liczone tylko dla konkretnych bić poniżej;
     // nie wykonuj dodatkowej, pełnej oceny taktycznej na każdym q-node.
-    MoveOrdering::sortMoves(board, moves, 0, ply, Move());
+    MoveOrdering::sortMoves(board, moves, 0, ply, ttMove, 0, 24);
 
     // W szachu nie można zastosować stand-pat: trzeba rozpatrzyć
     // wszystkie legalne odpowiedzi na szacha. Jeśli nie ma ruchów,
@@ -453,7 +625,9 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     else
     {
-        standPat = Evaluation::evaluate(board);
+        standPat = hasTTBitboards
+            ? Evaluation::evaluate(board, ttBitboards)
+            : Evaluation::evaluate(board);
         if (board.getSideToMove() == ChessColor::Black)
         {
             standPat = -standPat;
@@ -470,11 +644,13 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         }
     }
 
+    bool completed = true;
     for (int i = 0; i < moves.size(); i++)
     {
         if (shouldStopSearch())
         {
-            return alpha;
+            completed = false;
+            break;
         }
 
         const Move& move = moves[i];
@@ -547,6 +723,17 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
         if (score > alpha)
         {
+            // Keep the qsearch continuation as part of the same, horizontal
+            // PV representation used by negamax.
+            pvTable[ply][0] = move;
+            const int childPly = std::min(searchDepth, MaxPly - 1);
+            const int childLength = std::max(
+                0, std::min(pvLength[childPly], MaxPly - childPly));
+            for (int j = 0; j < childLength && j + 1 < MaxPly - ply; ++j)
+            {
+                pvTable[ply][j + 1] = pvTable[childPly][j];
+            }
+            pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
             alpha = score;
 
             if (alpha >= beta)
@@ -556,11 +743,40 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         }
     }
 
+    //--------------------------------------------------
+    // Transposition Table store in quiescence. Never cache a partial result
+    // after a time/node-limit interruption.
+    //--------------------------------------------------
+    if (!completed)
+        return alpha;
+
+    TranspositionTable::NodeType ttType;
+    int storeScore = alpha;
+
+    if (alpha >= originalBeta)
+    {
+        ttType = TranspositionTable::NodeType::LowerBound;
+    }
+    else if (alpha <= originalAlpha)
+    {
+        ttType = TranspositionTable::NodeType::UpperBound;
+    }
+    else
+    {
+        ttType = TranspositionTable::NodeType::Exact;
+    }
+
+    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
+    TranspositionTable::store(
+        nodeKey, 0, scoreToTT(storeScore, ply), ttType, Move{}, storeBitboards);
+
     return alpha;
 }
 
 int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 {
+    const int originalAlpha = alpha;
+    const int originalBeta = beta;
     // MaxPly safety check
     if (ply >= MaxPly - 1)
     {
@@ -588,6 +804,63 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     NodeRepGuard repGuard(nodeKey);
 
     //--------------------------------------------------
+    // Transposition Table probe
+    //--------------------------------------------------
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    Move ttMove = Move{};
+    Bitboards ttBitboards{};
+    bool hasTTBitboards = false;
+
+    // Determine if this is a PV node based on original window.
+    // Must be done BEFORE TT bound updates, because bounds can narrow
+    // the window and incorrectly make a PV node look like a cut node.
+    const bool pvNode = (beta - alpha > 1);
+
+    if (ttEntry)
+    {
+        ttMove = ttEntry->bestMove;
+        if (ttEntry->depth >= depth)
+        {
+            int ttScore = scoreFromTT(ttEntry->score, ply);
+
+            if (ttEntry->type == TranspositionTable::NodeType::Exact)
+            {
+                // An exact TT score is sufficient for a cut node, but a PV
+                // node must search its moves to build a fresh principal line.
+                // Don't try to reconstruct PV from TT at PV nodes - child
+                // positions haven't been searched at this depth yet.
+                if (!pvNode)
+                {
+                    return ttScore;
+                }
+                // PV node: use TT move for ordering (via ttMove), but search to build PV.
+            }
+            else if (!pvNode && ttEntry->type == TranspositionTable::NodeType::LowerBound)
+            {
+                alpha = std::max(alpha, ttScore);
+            }
+            else if (!pvNode && ttEntry->type == TranspositionTable::NodeType::UpperBound)
+            {
+                beta = std::min(beta, ttScore);
+            }
+
+            // Bounds from TT may narrow a zero-window node, but must not
+            // narrow a PV node.  Doing so can turn its children into
+            // non-PV searches and leave the copied PV shorter than depth.
+            if (!pvNode && alpha >= beta)
+            {
+                return ttScore;
+            }
+        }
+        // Store bitboards for potential use in evaluation
+        if (ttEntry->bitboards.allOccupied != 0)
+        {
+            ttBitboards = ttEntry->bitboards;
+            hasTTBitboards = true;
+        }
+    }
+
+    //--------------------------------------------------
     // Generate moves once (reused for terminal detection and search)
     //--------------------------------------------------
 
@@ -595,7 +868,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, pseudoInfo);
-    MoveValidator::updatePieceBitboards(board, moves);
 
     const int endScore = terminalScore(board, moves, ply);
     if (endScore != 0)
@@ -617,7 +889,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // Null move pruning
     //--------------------------------------------------
 
-    if (depth >= 3 && ply > 0 &&
+    if (!pvNode && depth >= 3 && ply > 0 &&
         !MoveValidator::isKingInCheck(board, board.getSideToMove()) &&
         safeForNullMove(board, board.getSideToMove()))
     {
@@ -637,10 +909,13 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
-    MoveOrdering::sortMoves(board, moves, depth, ply, Move());
+    MoveOrdering::sortMoves(board, moves, depth, ply, ttMove, 0, 32);
 
     Move bestMove;
     int bestScore = -Infinity;
+    MoveList quietTried;
+    const ChessColor searchSide = board.getSideToMove();
+    bool completed = true;
 
     for (int index = 0; index < moves.size(); ++index)
     {
@@ -648,6 +923,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         // pozostałych ruchów na tym poziomie (szybkie zatrzymanie).
         if (shouldStopSearch())
         {
+            completed = false;
             break;
         }
 
@@ -748,6 +1024,14 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             }
         }
 
+        const bool quietMove = move.capturedPiece == Piece::None &&
+            move.flag != MoveFlag::KingCastle &&
+            move.flag != MoveFlag::QueenCastle &&
+            !(move.flag >= MoveFlag::PromotionKnight &&
+              move.flag <= MoveFlag::PromotionCaptureQueen);
+        if (quietMove)
+            quietTried.add(move);
+
         if (score > bestScore)
         {
             bestScore = score;
@@ -757,12 +1041,14 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             if (ply < MaxPly - 1)
             {
                 pvTable[ply][0] = move;
-                int childPly = ply + 1;
-                for (int i = 0; i < pvLength[childPly]; i++)
+                const int childPly = ply + 1;
+                const int childLength = std::max(
+                    0, std::min(pvLength[childPly], MaxPly - childPly));
+                for (int i = 0; i < childLength && i + 1 < MaxPly - ply; ++i)
                 {
                     pvTable[ply][1 + i] = pvTable[childPly][i];
                 }
-                pvLength[ply] = 1 + pvLength[childPly];
+                pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
             }
         }
 
@@ -778,12 +1064,42 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                   move.flag <= MoveFlag::PromotionCaptureQueen))
             {
                 KillerMoves::add(ply, move);
-                HistoryHeuristic::add(board.getSideToMove(), move, depth);
+                HistoryHeuristic::add(searchSide, move, depth);
+                for (int i = 0; i + 1 < quietTried.size(); ++i)
+                    HistoryHeuristic::penalize(searchSide, quietTried[i], depth);
             }
 
             break;
         }
     }
+
+    //--------------------------------------------------
+    // Transposition Table store. Partial searches must not enter the TT.
+    //--------------------------------------------------
+    if (!completed)
+        return bestScore;
+
+    TranspositionTable::NodeType ttType;
+    int storeScore = bestScore;
+
+    if (bestScore <= originalAlpha)
+    {
+        ttType = TranspositionTable::NodeType::UpperBound;
+    }
+    else if (bestScore >= originalBeta)
+    {
+        ttType = TranspositionTable::NodeType::LowerBound;
+    }
+    else
+    {
+        ttType = TranspositionTable::NodeType::Exact;
+    }
+
+    // Use stored bitboards if available, otherwise compute fresh
+    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
+
+    TranspositionTable::store(
+        nodeKey, depth, scoreToTT(storeScore, ply), ttType, bestMove, storeBitboards);
 
     return bestScore;
 }

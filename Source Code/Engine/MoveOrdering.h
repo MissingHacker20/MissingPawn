@@ -14,7 +14,8 @@ public:
         int depth,
         int ply,
         const Move& ttMove = Move{},
-        int cachedTactical = 0);
+        int cachedTactical = 0,
+        int sortLimit = 0);
 
 private:
 

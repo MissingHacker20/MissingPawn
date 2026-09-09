@@ -163,9 +163,11 @@ void MoveOrdering::sortMoves(
     int depth,
     int ply,
     const Move& ttMove,
-    int cachedTactical)
+    int cachedTactical,
+    int sortLimit)
 {
     const int count = moves.size();
+    const int limit = sortLimit > 0 ? std::min(sortLimit, count) : count;
 
     // Wstępnie policz wynik dla KAŻDEGO ruchu dokładnie raz.
     // Wcześniej scoreMove był wołany wielokrotnie w każdym porównaniu
@@ -180,30 +182,33 @@ void MoveOrdering::sortMoves(
     int scores[MaxMoves];
     int order[MaxMoves];
 
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < limit; ++i)
     {
         scores[i] = scoreMove(board, moves[i], depth, ply, ttMove, cachedTactical);
         order[i] = i;
     }
+    for (int i = limit; i < count; ++i)
+        order[i] = i;
 
-    // Częściowe sortowanie przez wybór: wyszukiwanie zużywa najczęściej
-    // tylko początek listy (PVS), a wynik i tak jest deterministyczny.
-    // Zachowujemy pełne uporządkowanie, ale bez comparatora std::sort.
-    for (int i = 0; i < count; ++i)
+    // Insertion sort keeps the cheap, allocation-free hot path and performs
+    // fewer writes than selection sort on the almost-ordered lists produced by
+    // iterative deepening.
+    for (int i = 1; i < limit; ++i)
     {
-        int best = i;
-        for (int j = i + 1; j < count; ++j)
+        const int selected = order[i];
+        int j = i;
+        while (j > 0 && scores[order[j - 1]] < scores[selected])
         {
-            if (scores[order[j]] > scores[order[best]])
-                best = j;
+            order[j] = order[j - 1];
+            --j;
         }
-        std::swap(order[i], order[best]);
+        order[j] = selected;
     }
 
     Move scratch[MaxMoves];
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < limit; ++i)
         scratch[i] = moves[order[i]];
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < limit; ++i)
         moves[i] = scratch[i];
 }
 

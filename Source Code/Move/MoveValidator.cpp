@@ -295,35 +295,16 @@ bool MoveValidator::isSquareAttacked(
     Square square,
     ChessColor attacker)
 {
-    // Cache some bitboards to avoid repeated calls
-    const Bitboard occ = board.getAllOccupancy();
-
-    int sq = static_cast<int>(square);
-    int file = sq % 8;
-    int rank = sq / 8;
-
-    // Pawn attacks (inverse lookup: which pawns attack this square)
-    if (attacker == ChessColor::White) {
-        // White pawns attack from one rank below
-        if (rank > 0) {
-            // Left diagonal attacker: from file+1 (source file < 7)
-            if (file < 7 && board.pieceAt(static_cast<Square>(sq - 7)) == Piece::WhitePawn)
-                return true;
-            // Right diagonal attacker: from file-1 (source file > 0)
-            if (file > 0 && board.pieceAt(static_cast<Square>(sq - 9)) == Piece::WhitePawn)
-                return true;
-        }
-    } else {
-        // Black pawns attack from one rank above
-        if (rank < 7) {
-            // Left diagonal attacker: from file+1 (source file < 7)
-            if (file < 7 && board.pieceAt(static_cast<Square>(sq + 9)) == Piece::BlackPawn)
-                return true;
-            // Right diagonal attacker: from file-1 (source file > 0)
-            if (file > 0 && board.pieceAt(static_cast<Square>(sq + 7)) == Piece::BlackPawn)
-                return true;
-        }
-    }
+    // Pawn attacks use the inverse precomputed masks. This avoids up to two
+    // pieceAt() calls and, unlike arithmetic on square indices, cannot cross
+    // a board edge.
+    const Piece pawn = attacker == ChessColor::White
+        ? Piece::WhitePawn : Piece::BlackPawn;
+    const Bitboard pawnAttackers = attacker == ChessColor::White
+        ? AttackTables::blackPawnAttacks(square)
+        : AttackTables::whitePawnAttacks(square);
+    if (pawnAttackers & board.getBitboard(pawn))
+        return true;
 
     const Bitboard knightAttacks = AttackTables::knightAttacks(square);
     const Piece knight = (attacker == ChessColor::White) ? Piece::WhiteKnight : Piece::BlackKnight;
@@ -333,6 +314,9 @@ bool MoveValidator::isSquareAttacked(
     const Piece king = (attacker == ChessColor::White) ? Piece::WhiteKing : Piece::BlackKing;
     if (kingAttacks & board.getBitboard(king)) return true;
 
+    // Sliding attacks are the only part that needs full occupancy. Delay this
+    // load until after the cheap leaper/pawn checks above.
+    const Bitboard occ = board.getAllOccupancy();
     const Bitboard rookOrQueen = board.getBitboard(
         (attacker == ChessColor::White) ? Piece::WhiteRook : Piece::BlackRook)
         | board.getBitboard(
@@ -925,7 +909,7 @@ void MoveValidator::updatePieceBitboards(
 
 MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, ChessColor side)
 {
-    CheckInfo info;
+    CheckInfo info{};
     info.kingSquare = findKing(board, side);
 
     if (info.kingSquare == Square::None)
@@ -1019,28 +1003,49 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
         }
 
         info.doubleCheck = (countBits(info.checkers) >= 2);
+
+        if (!info.doubleCheck)
+        {
+            info.evasionMask = info.checkers;
+            if (info.checkers)
+            {
+                const Square checker = static_cast<Square>(
+                    std::countr_zero(info.checkers));
+                const Piece checkerPiece = board.pieceAt(checker);
+                const bool slider = checkerPiece == Piece::WhiteBishop ||
+                    checkerPiece == Piece::BlackBishop ||
+                    checkerPiece == Piece::WhiteRook ||
+                    checkerPiece == Piece::BlackRook ||
+                    checkerPiece == Piece::WhiteQueen ||
+                    checkerPiece == Piece::BlackQueen;
+                if (slider)
+                    info.evasionMask |= getBetweenRay(info.kingSquare, checker);
+            }
+        }
+        else
+        {
+            info.evasionMask = 0;
+        }
     }
 
-    // Find pinned pieces (our sliders on same ray as king with enemy slider behind)
-    Bitboard ownBishops = board.getBitboard(side == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop);
-    Bitboard ownRooks   = board.getBitboard(side == ChessColor::White ? Piece::WhiteRook   : Piece::BlackRook);
-    Bitboard ownQueens  = board.getBitboard(side == ChessColor::White ? Piece::WhiteQueen  : Piece::BlackQueen);
-    Bitboard ownPawns   = board.getBitboard(side == ChessColor::White ? Piece::WhitePawn   : Piece::BlackPawn);
-    Bitboard ownSliders = ownBishops | ownRooks | ownQueens;
-    Bitboard ownPawnsForPins = ownPawns;
+    // Find pins using the general king -> own piece -> enemy slider pattern.
+    // The pinned piece may be a pawn, knight, bishop, rook, or queen; the
+    // geometry of the pin is determined only by the ray and enemy slider.
+    const Piece ownKing = side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing;
+    Bitboard pinnedCandidates = board.getOccupancy(side) & ~board.getBitboard(ownKing);
 
-    // For each own slider (bishop, rook, queen), check if it's pinned
-    Bitboard sliders = ownSliders;
+    // Scan every ray from the king. The first occupied square is the only
+    // possible pinned piece; the next occupied square must be an enemy slider.
+    Bitboard sliders = pinnedCandidates;
     while (sliders)
     {
         Square sliderSq = popLeastSignificantBit(sliders);
-        Piece sliderPiece = board.pieceAt(sliderSq);
 
-        bool isBishop = (sliderPiece == Piece::WhiteBishop || sliderPiece == Piece::BlackBishop);
-        bool isRook   = (sliderPiece == Piece::WhiteRook   || sliderPiece == Piece::BlackRook);
-        bool isQueen  = (sliderPiece == Piece::WhiteQueen  || sliderPiece == Piece::BlackQueen);
+        // Check each direction from the king through this candidate.
+        // Any own piece can be pinned; only the enemy piece behind it
+        // determines whether the ray is orthogonal or diagonal.
 
-        // Check each direction from king through this slider
+        // Check each direction from king through this candidate
         constexpr int AllDirs[8][2] = {
             {1,0},{-1,0},{0,1},{0,-1},  // orthogonal
             {1,1},{1,-1},{-1,1},{-1,-1} // diagonal
@@ -1072,8 +1077,8 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
                             bool isOrtho = (d < 4);
                             bool isDiag  = (d >= 4);
 
-                            if ((isOrtho && (isRook || isQueen) && getBit(enemyOrthogonal, sq)) ||
-                                (isDiag && (isBishop || isQueen) && getBit(enemyDiagonal, sq)))
+                            if ((isOrtho && getBit(enemyOrthogonal, sq)) ||
+                                (isDiag && getBit(enemyDiagonal, sq)))
                             {
                                 // This piece is pinned!
                                 info.pinned |= (1ULL << static_cast<int>(sliderSq));
@@ -1099,55 +1104,6 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
                 }
                 f += AllDirs[d][0];
                 r += AllDirs[d][1];
-            }
-        }
-    }
-
-    // Check for pinned pawns (orthogonal rays only - same file as king with enemy rook/queen behind)
-    Bitboard pawns = ownPawnsForPins;
-    while (pawns)
-    {
-        Square pawnSq = popLeastSignificantBit(pawns);
-        int pawnIdx = static_cast<int>(pawnSq);
-        int pawnFile = pawnIdx % 8;
-        int pawnRank = pawnIdx / 8;
-
-        // Check if pawn is on same file as king
-        if (pawnFile == kingFile)
-        {
-            // Determine direction from king to pawn
-            int rankDiff = pawnRank - kingRank;
-            int direction = (rankDiff > 0) ? 1 : -1;
-
-            // Look for enemy rook/queen behind the pawn (further along same file)
-            int r = pawnRank + direction;
-            while (r >= 0 && r < 8)
-            {
-                Square sq = static_cast<Square>(r * 8 + kingFile);
-                Piece piece = board.pieceAt(sq);
-                if (piece != Piece::None)
-                {
-                    if (getBit(enemyOrthogonal, sq))
-                    {
-                        // Pawn is pinned by enemy rook/queen on same file
-                        info.pinned |= (1ULL << static_cast<int>(pawnSq));
-
-                        // Pin ray: squares between pawn and king (inclusive) + squares beyond pawn towards enemy
-                        Bitboard ray = getBetweenRay(info.kingSquare, pawnSq) | (1ULL << static_cast<int>(pawnSq));
-
-                        // Extend ray beyond pawn towards enemy
-                        int r2 = pawnRank + direction;
-                        while (r2 >= 0 && r2 < 8)
-                        {
-                            ray |= (1ULL << (r2 * 8 + kingFile));
-                            r2 += direction;
-                        }
-
-                        info.pinRays[static_cast<int>(pawnSq)] = ray;
-                    }
-                    break;
-                }
-                r += direction;
             }
         }
     }

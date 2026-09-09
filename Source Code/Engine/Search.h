@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Foundation/Board.h"
+#include "Foundation/Bitboards.h"
 #include "Move/MoveList.h"
+#include "Engine/TranspositionTable.h"
 
 #include <vector>
 
@@ -23,6 +25,10 @@ public:
     // PV z ostatniej w pełni ukończonej iteracji IDDFS
     static Move completedPvTable[MaxPly][MaxPly];
     static int completedPvLength[MaxPly];
+
+    // Transposition Table
+    static void initTranspositionTable(size_t sizeMB = 64);
+    static void clearTranspositionTable();
 
     // Śledzenie powtórzeń na ścieżce searchu (od korzenia w dół).
     // Sprawdzamy, czy dana pozycja (klucz Zobrist) pojawiła się już

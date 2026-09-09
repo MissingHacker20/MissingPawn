@@ -12,7 +12,8 @@ public:
     {
         Bitboard checkers = 0;           // Wszystkie figury dające szach
         Bitboard pinned = 0;             // Nasze figury przybite do króla
-        Bitboard pinRays[64];            // Dla każdej przybitej figury: pola na których może się ruszyć
+        Bitboard evasionMask = ~Bitboard(0); // Pola dostępne przy odpowiedzi na szacha
+        Bitboard pinRays[64]{};           // Dla każdej przybitej figury: pola na których może się ruszyć
         Square kingSquare = Square::None;
         bool inCheck = false;
         bool doubleCheck = false;

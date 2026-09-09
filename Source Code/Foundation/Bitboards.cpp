@@ -29,6 +29,9 @@ Bitboards Bitboards::compute(const Board& board, bool withCheckInfo)
 
         bb.occupied[c] = board.getOccupancy(colors[c]);
 
+        if (!withCheckInfo)
+            continue;
+
         // Unie ataków - z gotowych tablic AttackTables
         Bitboard bb2 = bb.pawns[c];
         while (bb2)
@@ -66,21 +69,20 @@ Bitboards Bitboards::compute(const Board& board, bool withCheckInfo)
             const Square s = popLeastSignificantBit(bb2);
             bb.queenAttacks[c] |= AttackTables::queenAttacks(s, bb.allOccupied);
         }
+    }
 
-        }
-
-        // Szachy i przypięcia - z gotowego MoveValidator::computeCheckInfo
-        if (withCheckInfo)
-        {
-            for (int c = 0; c < 2; ++c)
+    // Szachy i przypięcia - z gotowego MoveValidator::computeCheckInfo
+    if (withCheckInfo)
+    {
+        for (int c = 0; c < 2; ++c)
             {
                 const MoveValidator::CheckInfo info =
                     MoveValidator::computeCheckInfo(board, colors[c]);
 
                 bb.checkers[c] = info.checkers;
                 bb.pinned[c] = info.pinned;
-            }
         }
-
-        return bb;
     }
+
+    return bb;
+}

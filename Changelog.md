@@ -34,5 +34,7 @@
 - tactical evaluation
 - updated move generator
 
-## MissingPawn v3
-- TT
+## MissingPAwn v3
+- move generation update
+- improvement of bitboards
+- Transposition Table

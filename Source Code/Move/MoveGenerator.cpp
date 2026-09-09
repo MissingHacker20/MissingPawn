@@ -19,10 +19,21 @@ void MoveGenerator::generateMoves(
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
-    // Bitboardy biorą wyłącznie dane już wygenerowane przez silnik
-    // (Board + AttackTables); bez kosztownego liczenia szachów/przypięć.
-    const Bitboards bitboards = Bitboards::compute(board, false);
-    generateMoves(board, bitboards, moveList, checkInfo);
+    MoveGenerationContext context;
+    context.side = board.getSideToMove();
+    context.bitboards = Bitboards::compute(board, false);
+    context.checkInfo = checkInfo.kingSquare == Square::None
+        ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
+    const int side = sideIndex(context.side);
+    context.ownOccupancy = context.bitboards.occupied[side];
+    context.enemyOccupancy = context.bitboards.occupied[sideIndex(
+        MoveValidator::oppositeColor(context.side))];
+    context.totalOccupancy = context.bitboards.allOccupied;
+    context.kingSquare = context.checkInfo.kingSquare;
+    context.checkers = context.checkInfo.checkers;
+    context.pinned = context.checkInfo.pinned;
+    context.evasionMask = context.checkInfo.evasionMask;
+    generateMoves(board, context.bitboards, moveList, context.checkInfo);
     MoveValidator::filterLegalMoves(board, moveList);
 }
 
@@ -31,8 +42,21 @@ void MoveGenerator::generateCaptures(
     MoveList& moveList,
     const MoveValidator::CheckInfo& checkInfo)
 {
-    const Bitboards bitboards = Bitboards::compute(board, false);
-    generateCaptures(board, bitboards, moveList, checkInfo);
+    MoveGenerationContext context;
+    context.side = board.getSideToMove();
+    context.bitboards = Bitboards::compute(board, false);
+    context.checkInfo = checkInfo.kingSquare == Square::None
+        ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
+    const int side = sideIndex(context.side);
+    context.ownOccupancy = context.bitboards.occupied[side];
+    context.enemyOccupancy = context.bitboards.occupied[sideIndex(
+        MoveValidator::oppositeColor(context.side))];
+    context.totalOccupancy = context.bitboards.allOccupied;
+    context.kingSquare = context.checkInfo.kingSquare;
+    context.checkers = context.checkInfo.checkers;
+    context.pinned = context.checkInfo.pinned;
+    context.evasionMask = context.checkInfo.evasionMask;
+    generateCaptures(board, context.bitboards, moveList, context.checkInfo);
     MoveValidator::filterLegalMoves(board, moveList);
 }
 
@@ -52,32 +76,17 @@ void MoveGenerator::generateMoves(
 {
     moveList.clear();
 
-    // Generowanie ruchów musi być kompletne. Obecna optymalizacja oparta na
-    // CheckInfo nie obejmuje wszystkich przypadków związania i odpowiedzi na
-    // szacha; legalność jest dlatego sprawdzana przez MoveValidator po
-    // wygenerowaniu listy. Używamy tu zerowej maski, aby nie odrzucać
-    // prawidłowych pseudoruchów przed tą walidacją.
-    (void)checkInfo;
-    const MoveValidator::CheckInfo pseudoInfo{};
+    const MoveValidator::CheckInfo& legalInfo = checkInfo;
 
-    // KRÓL wymaga prawdziwego CheckInfo: bez niego generator nie zna pola
-    // atakowanego przez wroga i statusu szacha, przez co generuje roszady
-    // w szachu oraz przez pole atakowane (odrzucane tylko przy roszadzie —
-    // po zwykłym ruchu króla filtr isKingInCheck nadal ratuje sprawę).
-    const MoveValidator::CheckInfo kingInfo =
-        MoveValidator::computeCheckInfo(board, board.getSideToMove());
-
-    generateKingMoves(board, bitboards, moveList, kingInfo);
-
-    generateQueenMoves(board, bitboards, moveList, pseudoInfo);
-
-    generateRookMoves(board, bitboards, moveList, pseudoInfo);
-
-    generateBishopMoves(board, bitboards, moveList, pseudoInfo);
-
-    generateKnightMoves(board, bitboards, moveList, pseudoInfo);
-
-    generatePawnMoves(board, bitboards, moveList, pseudoInfo);
+    generateKingMoves(board, bitboards, moveList, legalInfo);
+    if (!legalInfo.doubleCheck)
+    {
+        generateQueenMoves(board, bitboards, moveList, legalInfo);
+        generateRookMoves(board, bitboards, moveList, legalInfo);
+        generateBishopMoves(board, bitboards, moveList, legalInfo);
+        generateKnightMoves(board, bitboards, moveList, legalInfo);
+        generatePawnMoves(board, bitboards, moveList, legalInfo);
+    }
 }
 
 void MoveGenerator::generateCaptures(
@@ -88,22 +97,15 @@ void MoveGenerator::generateCaptures(
 {
     moveList.clear();
 
-    // Zobacz komentarz w generateMoves: kompletność pseudoruchów jest
-    // ważniejsza niż przedwczesne ograniczanie ich niepełnym CheckInfo.
-    (void)checkInfo;
-    const MoveValidator::CheckInfo pseudoInfo{};
-
-    generateQueenCaptures(board, bitboards, moveList, pseudoInfo);
-
-    generateRookCaptures(board, bitboards, moveList, pseudoInfo);
-
-    generateBishopCaptures(board, bitboards, moveList, pseudoInfo);
-
-    generateKnightCaptures(board, bitboards, moveList, pseudoInfo);
-
-    generatePawnCaptures(board, bitboards, moveList, pseudoInfo);
-
-    generateKingCaptures(board, bitboards, moveList, pseudoInfo);
+    if (!checkInfo.doubleCheck)
+    {
+        generateQueenCaptures(board, bitboards, moveList, checkInfo);
+        generateRookCaptures(board, bitboards, moveList, checkInfo);
+        generateBishopCaptures(board, bitboards, moveList, checkInfo);
+        generateKnightCaptures(board, bitboards, moveList, checkInfo);
+        generatePawnCaptures(board, bitboards, moveList, checkInfo);
+    }
+    generateKingCaptures(board, bitboards, moveList, checkInfo);
 }
 
 // Helper functions for generating moves with CheckInfo
@@ -144,58 +146,19 @@ void MoveGenerator::generatePawnMoves(
 
             if (!getBit(bitboards.allOccupied, to))
             {
-                // Check if this square is allowed by pin/eviction constraints
-                bool squareAllowed = true;
+                // Quiet-push legality must not skip the rest of this pawn:
+                // the same pawn may still have a legal capture or en passant.
+                bool squareAllowed = !checkInfo.inCheck ||
+                    getBit(checkInfo.evasionMask, to);
+
+                // Evasion mask already contains the only legal destination squares
+                // while in check. Apply the pin restriction in addition to it.
                 if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
                 {
-                    // Piece is pinned, check if move is along pin ray
-                    if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(to))))
+                    if (!(checkInfo.pinRays[static_cast<int>(from)] &
+                          (1ULL << static_cast<int>(to))))
                     {
                         squareAllowed = false;
-                    }
-                }
-                else if (checkInfo.inCheck)
-                {
-                    // In check, check if this is an evasion move
-                    if (!(checkInfo.enemyAttacks & (1ULL << static_cast<int>(to))) &&
-                        !(checkInfo.checkers & (1ULL << static_cast<int>(to))))
-                    {
-                        // Not a capture of checker or block - only king moves allowed in double check
-                        if (checkInfo.doubleCheck)
-                        {
-                            squareAllowed = false;
-                        }
-                        // For single check, non-capture non-block moves are not allowed
-                        // unless it's a king move (handled separately)
-                        if (!checkInfo.doubleCheck)
-                        {
-                            // Check if it's a block move
-                            bool isBlock = false;
-                            Bitboard checkers = checkInfo.checkers;
-                            while (checkers)
-                            {
-                                Square checkerSq = popLeastSignificantBit(checkers);
-                                if (getBit(getBetweenRay(from, to), checkerSq))
-                                {
-                                    isBlock = true;
-                                    break;
-                                }
-                            }
-                            if (!isBlock)
-                            {
-                                squareAllowed = false;
-                            }
-                        }
-                    }
-                    // If it's a capture, check if it captures a checker
-                    else if (board.pieceAt(to) != Piece::None &&
-                            getPieceColor(board.pieceAt(to)) != side)
-                    {
-                        // Capture - only allowed if it captures a checker
-                        if (!(checkInfo.checkers & (1ULL << static_cast<int>(to))))
-                        {
-                            squareAllowed = false;
-                        }
                     }
                 }
 
@@ -240,7 +203,8 @@ void MoveGenerator::generatePawnMoves(
                             Square second =
                                 static_cast<Square>(secondRank * 8 + file);
 
-                            if (!getBit(bitboards.allOccupied, second))
+                            if (!getBit(bitboards.allOccupied, second) &&
+                                (!checkInfo.inCheck || getBit(checkInfo.evasionMask, second)))
                             {
                                 // Check if double push square is allowed
                                 bool doublePushAllowed = true;
@@ -248,30 +212,6 @@ void MoveGenerator::generatePawnMoves(
                                 {
                                     // Piece is pinned, check if move is along pin ray
                                     if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(second))))
-                                    {
-                                        doublePushAllowed = false;
-                                    }
-                                }
-                                else if (checkInfo.inCheck)
-                                {
-                                    // In check, double push only allowed if it's an evasion
-                                    // (capture of checker or block)
-                                    bool isEvasion = false;
-
-                                    // Check if it captures a checker (impossible for double push to same file)
-                                    // Check if it's a block
-                                    Bitboard checkers = checkInfo.checkers;
-                                    while (checkers)
-                                    {
-                                        Square checkerSq = popLeastSignificantBit(checkers);
-                                        if (getBit(getBetweenRay(from, second), checkerSq))
-                                        {
-                                            isEvasion = true;
-                                            break;
-                                        }
-                                    }
-
-                                    if (!isEvasion)
                                     {
                                         doublePushAllowed = false;
                                     }
@@ -322,7 +262,7 @@ void MoveGenerator::generatePawnMoves(
                     captureAllowed = false;
                 }
             }
-            else if (checkInfo.inCheck)
+            if (checkInfo.inCheck)
             {
                 // In check, only captures of checkers are allowed (or blocks, but pawns can't block with capture)
                 if (!(checkInfo.checkers & (1ULL << static_cast<int>(to))))
@@ -331,7 +271,8 @@ void MoveGenerator::generatePawnMoves(
                 }
             }
 
-            if (captureAllowed)
+            if (captureAllowed &&
+                (!checkInfo.inCheck || getBit(checkInfo.evasionMask, to)))
             {
                 bool promotion =
                     (side == ChessColor::White && rank == 6) ||
@@ -382,44 +323,38 @@ void MoveGenerator::generatePawnMoves(
 
             if (getBit(attacks, enPassant))
             {
-                // Check if en passant is allowed by pin/eviction constraints
-                bool epAllowed = true;
-                if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-                {
-                    // Piece is pinned, check if en passant is along pin ray
-                    if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(enPassant))))
-                    {
-                        epAllowed = false;
-                    }
-                }
-                else if (checkInfo.inCheck)
-                {
-                    // In check, en passant only allowed if it captures a checker
-                    int enPassantFile = static_cast<int>(enPassant) % 8;
-                    int enPassantRank = static_cast<int>(enPassant) / 8;
-                    int capturedFile = enPassantFile;
-                    int capturedRank = (side == ChessColor::White) ? enPassantRank - 1 : enPassantRank + 1;
-                    Square capturedSquare = static_cast<Square>(capturedRank * 8 + capturedFile);
+                const int enPassantFile = static_cast<int>(enPassant) % 8;
+                const int enPassantRank = static_cast<int>(enPassant) / 8;
+                const int capturedRank =
+                    side == ChessColor::White ? enPassantRank - 1 : enPassantRank + 1;
+                const Square capturedSquare =
+                    static_cast<Square>(capturedRank * 8 + enPassantFile);
+                const Piece capturedPawn =
+                    side == ChessColor::White ? Piece::BlackPawn : Piece::WhitePawn;
 
-                    // The captured pawn is not on the en passant square, it's beside it
-                    // So we need to check if the captured pawn is a checker
-                    if (!(checkInfo.checkers & (1ULL << static_cast<int>(capturedSquare))))
-                    {
-                        epAllowed = false;
-                    }
+                // A FEN may contain a stale EP square. Do not manufacture an
+                // EP move unless the pawn that would be captured is present.
+                if (capturedRank < 0 || capturedRank >= 8 ||
+                    board.pieceAt(capturedSquare) != capturedPawn)
+                {
+                    continue;
                 }
 
-                if (epAllowed)
-                {
-                    Piece capturedPawn = (side == ChessColor::White) ? Piece::BlackPawn : Piece::WhitePawn;
-                    moveList.add(
-                        Move(
-                            from,
-                            enPassant,
-                            pawn,
-                            MoveFlag::EnPassant,
-                            capturedPawn));
-                }
+                // En passant changes two occupied squares: the moving pawn
+                // leaves `from` and the captured pawn disappears from
+                // `capturedSquare`.  Therefore neither the ordinary pin ray
+                // test nor the normal check evasion mask is sufficient here.
+                // Generate the pseudo-legal EP move and let the virtual
+                // position validator decide whether the king is safe.  This
+                // preserves EP evasions that capture a checker, block a ray,
+                // or uncover/close a line by removing the adjacent pawn.
+                moveList.add(
+                    Move(
+                        from,
+                        enPassant,
+                        pawn,
+                        MoveFlag::EnPassant,
+                        capturedPawn));
             }
         }
     }
@@ -451,18 +386,19 @@ void MoveGenerator::generateKnightMoves(
         // Remove squares occupied by our own pieces
         attacks &= ~ownOccupancy;
 
+        if (checkInfo.inCheck)
+            attacks &= checkInfo.evasionMask;
+
         // Apply pin/eviction constraints
         if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
         {
             // Piece is pinned - knights can't be pinned in chess, but handle anyway
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
-            // In check, knight moves only allowed if they capture a checker
-            // (knights can't block)
-            Bitboard checkerSquares = checkInfo.checkers;
-            attacks &= checkerSquares;
+            // A knight can only capture the checker; it cannot block a ray.
+            attacks &= checkInfo.evasionMask & checkInfo.checkers;
         }
 
         while (attacks)
@@ -511,7 +447,7 @@ void MoveGenerator::generateBishopMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
@@ -581,7 +517,7 @@ void MoveGenerator::generateRookMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
@@ -651,7 +587,7 @@ void MoveGenerator::generateQueenMoves(
             // Piece is pinned, restrict to pin ray
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        else if (checkInfo.inCheck)
+        if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
             Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
@@ -717,30 +653,12 @@ void MoveGenerator::generateKingMoves(
         // Remove squares occupied by our own pieces
         attacks &= ~ownOccupancy;
 
-        // Remove squares attacked by enemy (unless capturing that piece)
-        Bitboard safeSquares = attacks & ~checkInfo.enemyAttacks;
-
-        // Add back squares where we capture enemy pieces (even if they attack that square)
-Bitboard enemyOccupancy = bitboards.occupied[sideIndex(MoveValidator::oppositeColor(side))];
-        Bitboard capturableEnemy = safeSquares | (attacks & enemyOccupancy);
-
-        // Additional restriction: if in check, king can only move to squares that evade check
-        if (checkInfo.inCheck)
-        {
-            // King moves are only allowed to squares not attacked by enemy
-            // (except when capturing the checking piece)
-            Bitboard evasionSquares = ~checkInfo.enemyAttacks;
-
-            // Add squares where we capture checking pieces
-            Bitboard checkers = checkInfo.checkers;
-            while (checkers)
-            {
-                Square checkerSq = popLeastSignificantBit(checkers);
-                evasionSquares |= (1ULL << static_cast<int>(checkerSq));
-            }
-
-            capturableEnemy &= evasionSquares;
-        }
+        // Do not reject king captures using the attack map from the original
+        // position. When the king captures, the captured piece disappears and
+        // may have been the only blocker or attacker on the destination square.
+        // isMoveLegal() performs the definitive virtual-position check after
+        // generation, so generate every non-own king destination here.
+        Bitboard capturableEnemy = attacks;
 
         while (capturableEnemy)
         {
