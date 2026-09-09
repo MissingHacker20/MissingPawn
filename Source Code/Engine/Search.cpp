@@ -419,13 +419,12 @@ Move Search::findBestMove(Board& board, int depth)
 
                 // Store PV at root: bestMove + PV from child
                 pvTable[0][0] = bestMove;
-                int childPly = 1;
-                for (int i = 0; i < pvLength[1]; i++)
+                const int childLength = std::max(0, std::min(pvLength[1], MaxPly - 1));
+                for (int i = 0; i < childLength && i + 1 < MaxPly; ++i)
                 {
-                    pvTable[0][childPly] = pvTable[1][i];
-                    childPly++;
+                    pvTable[0][i + 1] = pvTable[1][i];
                 }
-                pvLength[0] = childPly;
+                pvLength[0] = 1 + childLength;
             }
 
             alpha = std::max(alpha, score);
@@ -484,8 +483,9 @@ Move Search::findBestMove(Board& board, int depth)
                   << " time " << elapsed
                   << " pv";
 
-        // Print PV: current iteration + completed iteration to fill up to depth
-        for (int i = 0; i < pvLength[0] && i < currentDepth; i++)
+        // Print only the moves actually present in the current root PV.
+        const int printablePvLength = std::min(pvLength[0], currentDepth);
+        for (int i = 0; i < printablePvLength; ++i)
         {
             if (pvTable[0][i].from == Square::None)
                 break;
@@ -553,6 +553,11 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     Move ttMove{};
     Bitboards ttBitboards{};
     bool hasTTBitboards = false;
+
+    // A quiescence node can contribute captures to the PV.  Reset its row
+    // here because qsearch may be entered more than once for the same ply
+    // during a PVS/LMR re-search.
+    pvLength[ply] = 0;
 
     if (ttEntry && ttEntry->depth == 0)
     {
@@ -716,15 +721,26 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
         board.undoMove(move, undoInfo);
 
-if (score > alpha)
+        if (score > alpha)
+        {
+            // Keep the qsearch continuation as part of the same, horizontal
+            // PV representation used by negamax.
+            pvTable[ply][0] = move;
+            const int childPly = std::min(searchDepth, MaxPly - 1);
+            const int childLength = std::max(
+                0, std::min(pvLength[childPly], MaxPly - childPly));
+            for (int j = 0; j < childLength && j + 1 < MaxPly - ply; ++j)
             {
-                alpha = score;
-
-                if (alpha >= beta)
-                {
-                    break;
-                }
+                pvTable[ply][j + 1] = pvTable[childPly][j];
             }
+            pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
+            alpha = score;
+
+            if (alpha >= beta)
+            {
+                break;
+            }
+        }
     }
 
     //--------------------------------------------------
@@ -817,20 +833,20 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                 {
                     return ttScore;
                 }
-                // PV node: use TT move for ordering (via ttMove), but search to build PV
+                // PV node: use TT move for ordering (via ttMove), but search to build PV.
             }
-            else if (ttEntry->type == TranspositionTable::NodeType::LowerBound)
+            else if (!pvNode && ttEntry->type == TranspositionTable::NodeType::LowerBound)
             {
                 alpha = std::max(alpha, ttScore);
             }
-            else if (ttEntry->type == TranspositionTable::NodeType::UpperBound)
+            else if (!pvNode && ttEntry->type == TranspositionTable::NodeType::UpperBound)
             {
                 beta = std::min(beta, ttScore);
             }
 
-            // In PV nodes, don't cut off based on bounds alone - we need to
-            // search moves to build the principal variation. Only cut in
-            // non-PV nodes (cut nodes).
+            // Bounds from TT may narrow a zero-window node, but must not
+            // narrow a PV node.  Doing so can turn its children into
+            // non-PV searches and leave the copied PV shorter than depth.
             if (!pvNode && alpha >= beta)
             {
                 return ttScore;
@@ -873,7 +889,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // Null move pruning
     //--------------------------------------------------
 
-    if (depth >= 3 && ply > 0 &&
+    if (!pvNode && depth >= 3 && ply > 0 &&
         !MoveValidator::isKingInCheck(board, board.getSideToMove()) &&
         safeForNullMove(board, board.getSideToMove()))
     {
@@ -1025,12 +1041,14 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             if (ply < MaxPly - 1)
             {
                 pvTable[ply][0] = move;
-                int childPly = ply + 1;
-                for (int i = 0; i < pvLength[childPly]; i++)
+                const int childPly = ply + 1;
+                const int childLength = std::max(
+                    0, std::min(pvLength[childPly], MaxPly - childPly));
+                for (int i = 0; i < childLength && i + 1 < MaxPly - ply; ++i)
                 {
                     pvTable[ply][1 + i] = pvTable[childPly][i];
                 }
-                pvLength[ply] = 1 + pvLength[childPly];
+                pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
             }
         }
 
