@@ -1,4 +1,4 @@
-﻿#include "Board.h"
+#include "Board.h"
 #include "Game/Zobrist.h"
 
 
@@ -561,13 +561,13 @@ void Board::makeMove(
     }
 
     //--------------------------------------------------
-    // Change side (XOR side key)
+    // Change side. The calculated hash contains a side key only for Black,
+    // therefore toggle that key only when the side-to-move state changes.
     //--------------------------------------------------
-
-    zobristKey ^= Zobrist::getSideKey(sideToMove);
 
     if (sideToMove == ChessColor::Black)
     {
+        zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
         fullmoveNumber++;
     }
 
@@ -576,7 +576,10 @@ void Board::makeMove(
         ? ChessColor::Black
         : ChessColor::White;
 
-    zobristKey ^= Zobrist::getSideKey(sideToMove);
+    if (sideToMove == ChessColor::Black)
+    {
+        zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
+    }
 
     // Po zmianie strony sprawdzamy, czy przeciwnik rzeczywiście może bić
     // en passant. Przed zmianą byłaby badana niewłaściwa strona.
@@ -872,15 +875,22 @@ void Board::makeNullMove(
 
     enPassantSquare = Square::None;
 
-    // XOR side key for current side, then for new side
-    zobristKey ^= Zobrist::getSideKey(sideToMove);
+    // Toggle the same side key convention used by calculateHash(): only
+    // Black contributes a side key.
+    if (sideToMove == ChessColor::Black)
+    {
+        zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
+    }
 
     sideToMove =
         (sideToMove == ChessColor::White)
         ? ChessColor::Black
         : ChessColor::White;
 
-    zobristKey ^= Zobrist::getSideKey(sideToMove);
+    if (sideToMove == ChessColor::Black)
+    {
+        zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
+    }
 }
 
 void Board::undoNullMove(
@@ -899,7 +909,7 @@ Piece Board::pieceAt(Square square) const
     {
         return Piece::None;
     }
-    
+
     return mailbox[static_cast<int>(square)];
 }
 

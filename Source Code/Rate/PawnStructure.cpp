@@ -1,5 +1,7 @@
 #include "Rate/PawnStructure.h"
 
+#include <algorithm>
+
 #include "Foundation/Bitboard.h"
 #include "Foundation/Bitboards.h"
 #include "Foundation/Board.h"
@@ -22,26 +24,24 @@ int PawnStructureEvaluation::PieceBlocker(const Board& board, const Bitboards& b
 
     int score = 0;
 
-    // Figury przeciwnika bez pionków - wprost z bitboardów
-    const Bitboard enemySlidersKnights = bitboards.knights[enemyIdx]
-                                       | bitboards.bishops[enemyIdx]
-                                       | bitboards.rooks[enemyIdx]
-                                       | bitboards.queens[enemyIdx]
-                                       | bitboards.kings[enemyIdx];
+    // A blocker is valuable only when it actually occupies a square that
+    // matters to an enemy piece. Do not count every square behind a pawn.
+    const Bitboard enemyPieces = bitboards.occupied[enemyIdx]
+        & ~bitboards.pawns[enemyIdx]
+        & ~bitboards.kings[enemyIdx];
+    const Bitboard ownPawns = bitboards.pawns[ownIdx];
 
-    // Occupancy bez własnych pionków
-    const Bitboard occWithoutOwnPawns = bitboards.allOccupied & ~bitboards.pawns[ownIdx];
-
-    Bitboard enemyPieces = enemySlidersKnights;
-    while (enemyPieces)
+    Bitboard pieces = enemyPieces;
+    while (pieces)
     {
-        const Square sq = popLeastSignificantBit(enemyPieces);
-        const Bitboard withoutOwnPawns = AttackTables::pieceAttacks(board.pieceAt(sq), sq, occWithoutOwnPawns);
-        const Bitboard withOwnPawns = AttackTables::pieceAttacks(board.pieceAt(sq), sq, bitboards.allOccupied);
-        score += countBits(withoutOwnPawns & ~withOwnPawns);
+        const Square sq = popLeastSignificantBit(pieces);
+        const Bitboard attacks = AttackTables::pieceAttacks(
+            board.pieceAt(sq), sq, bitboards.allOccupied);
+        // One small bonus per pawn that restricts the piece, capped per piece.
+        score += std::min(3, countBits(attacks & ownPawns));
     }
 
-    return score;
+    return std::min(score, 24);
 }
 
 int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitboards, ChessColor color)
@@ -52,18 +52,27 @@ int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitbo
     // Unia ataków własnych pionków - gotowe pole z Bitboards
     const Bitboard ownPawnAttackUnion = bitboards.pawnAttacks[ownIdx];
 
-    // Figury przeciwnika (bez pionków i króla, jak poprzednio brano wszystkie figury)
-    Bitboard enemyPieces = bitboards.occupied[enemyIdx];
+    // Fear measures restricted enemy pieces, not the number of attacked empty
+    // squares. Kings and pawns are excluded: they do not represent useful
+    // mobility targets for this heuristic.
+    Bitboard enemyPieces = bitboards.occupied[enemyIdx]
+        & ~bitboards.pawns[enemyIdx]
+        & ~bitboards.kings[enemyIdx];
 
     int score = 0;
     while (enemyPieces)
     {
         const Square sq = popLeastSignificantBit(enemyPieces);
-        const Bitboard attacks = AttackTables::pieceAttacks(board.pieceAt(sq), sq, bitboards.allOccupied);
-        score += countBits(attacks & ownPawnAttackUnion);
+        if (getBit(ownPawnAttackUnion, sq))
+        {
+            const Piece piece = board.pieceAt(sq);
+            const int weight = (piece == Piece::WhiteQueen || piece == Piece::BlackQueen)
+                ? 3 : (piece == Piece::WhiteRook || piece == Piece::BlackRook ? 2 : 1);
+            score += weight;
+        }
     }
 
-    return score;
+    return std::min(score, 24);
 }
 
 int PawnStructureEvaluation::PieceSpace(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)

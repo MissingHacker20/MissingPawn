@@ -386,44 +386,28 @@ bool hasConnectedPassedPawn(const Bitboards& bitboards, ChessColor color, Square
     return false;
 }
 
-int countSpaceControl(ChessColor color, Square square)
+// Cheap estimate of a pawn break. It rewards a lever only when the pawn
+// has support and the forward square is not occupied by a friendly pawn.
+int breakPotential(const Bitboards& bitboards, ChessColor color, Square square)
 {
+    if (!isPawnLever(bitboards, color, square)) return 0;
+
     const int file = fileOf(square);
     const int rank = rankOf(square);
-    const int enemyHalf = color == ChessColor::White ? 4 : 3;
-    int control = 0;
+    const int step = color == ChessColor::White ? 1 : -1;
+    const int nextRank = rank + step;
+    if (nextRank < 0 || nextRank >= 8) return 0;
 
-    for (int f = std::max(0, file - 1); f <= std::min(7, file + 1); ++f)
-    {
-        for (int r = std::max(0, rank - 1); r <= std::min(7, rank + 1); ++r)
-        {
-            const int distance = std::abs(f - file) + std::abs(r - rank);
-            if (distance <= 1) continue;
+    const int own = Bitboards::indexOf(color);
+    const Square forward = static_cast<Square>(nextRank * 8 + file);
+    if (getBit(bitboards.pawns[own], forward)) return 0;
 
-            if (color == ChessColor::White && r >= enemyHalf) control++;
-            else if (color == ChessColor::Black && r <= enemyHalf) control++;
-        }
-    }
-
-    return control;
+    int score = isPawnProtected(bitboards, color, square) ? 24 : 8;
+    if (isCandidatePassedPawn(bitboards, color, square)) score += 12;
+    return score;
 }
 
-void computeActiveFiles(const Bitboards& bitboards, ChessColor color, bool activeFiles[8])
-{
-    std::fill(activeFiles, activeFiles + 8, false);
-
-    Bitboard pawns = bitboards.pawns[Bitboards::indexOf(color)];
-    while (pawns)
-    {
-        const Square square = popLeastSignificantBit(pawns);
-        const int file = fileOf(square);
-        activeFiles[file] = true;
-        if (file > 0) activeFiles[file - 1] = true;
-        if (file < 7) activeFiles[file + 1] = true;
-    }
-}
-
-}
+} // namespace
 
 int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
@@ -442,8 +426,7 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
     constexpr int IslandPenaltyEG = 60;
     constexpr int MajorityBonusMG = 30;
     constexpr int MajorityBonusEG = 80;
-    constexpr int SpaceControlBonus = 25;
-    constexpr int LockedBonus = 15;
+    constexpr int BreakPotentialBonus = 1;
     constexpr int LeverBonus = 40;
     constexpr int CentralBonus = 30;
     constexpr int ConnectedPassedBonus = 220;
@@ -456,17 +439,12 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
     int passedCount = 0;
     int connectedPassedCount = 0;
 
-    bool activeFiles[8] = {};
-    computeActiveFiles(bitboards, color, activeFiles);
-
     Bitboard pawns = bitboards.pawns[idx];
     while (pawns)
     {
         const Square square = popLeastSignificantBit(pawns);
 
         const int file = fileOf(square);
-        if (!activeFiles[file]) continue;
-
         const int rank = rankOf(square);
         const int progress = pawnProgress(color, square);
 
@@ -510,19 +488,15 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         }
 
         if (isPawnLever(bitboards, color, square)) score += LeverBonus;
-        if (isLockedPawn(bitboards, color, square)) score += LockedBonus;
+        // Do not reward a locked pawn by itself; reward only an actionable
+        // break opportunity (lever + support + available forward square).
+        score += breakPotential(bitboards, color, square) * BreakPotentialBonus;
         if (hasSameFileNeighbor(bitboards, color, file, rank)) score += PawnChainBonus / 2;
 
         const int leverOpp = leverOpportunityScore(bitboards, color, square);
         if (leverOpp > 0)
         {
             score += leverOpp;
-        }
-
-        const int spaceControl = countSpaceControl(color, square);
-        if (spaceControl > 0)
-        {
-            score += SpaceControlBonus + std::min(80, spaceControl * 10);
         }
 
         if (isBackwardPawn(bitboards, color, square)) score -= BackwardPenalty;

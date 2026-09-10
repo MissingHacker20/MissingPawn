@@ -22,8 +22,8 @@ GameResult GameState::getResult(const Board& board)
     Board copy = board;
     MoveList legalMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
+    // generateMoves() already returns legal moves; do not filter the list twice.
     MoveGenerator::generateMoves(copy, legalMoves, pseudoInfo);
-    MoveValidator::filterLegalMoves(copy, legalMoves);
 
     if (legalMoves.size() != 0)
     {

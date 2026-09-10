@@ -16,6 +16,7 @@
 #include "Move/MoveValidator.h"
 #include "Rate/Evaluation.h"
 #include "Others/TimeManager.h"
+#include "Others/UCI/UCIOptions.h"
 
 namespace
 {
@@ -270,7 +271,10 @@ Move Search::findBestMove(Board& board, int depth)
     static bool ttInitialized = false;
     if (!ttInitialized)
     {
-        TranspositionTable::initialize(64);
+        int hashMB = UCIOptions::getIntOption("Hash");
+        if (hashMB < 1) hashMB = 1;
+        if (hashMB > 4096) hashMB = 4096;
+        TranspositionTable::initialize(static_cast<size_t>(hashMB));
         ttInitialized = true;
     }
     TranspositionTable::newSearch();
@@ -528,6 +532,14 @@ Move Search::findBestMove(Board& board, int depth)
 
 int Search::quiesce(Board& board, int alpha, int beta, int ply)
 {
+    // QSearch may receive one extra ply from recapture extension. Never use an
+    // out-of-range PV row; at the hard limit, return a static evaluation.
+    if (ply >= MaxPly)
+    {
+        int score = Evaluation::evaluate(board);
+        return board.getSideToMove() == ChessColor::Black ? -score : score;
+    }
+
     const int originalAlpha = alpha;
     const int originalBeta = beta;
     TimeManager::incrementNodeCount();
@@ -726,14 +738,24 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
             // Keep the qsearch continuation as part of the same, horizontal
             // PV representation used by negamax.
             pvTable[ply][0] = move;
-            const int childPly = std::min(searchDepth, MaxPly - 1);
-            const int childLength = std::max(
-                0, std::min(pvLength[childPly], MaxPly - childPly));
-            for (int j = 0; j < childLength && j + 1 < MaxPly - ply; ++j)
+            // Recapture extension changes the qsearch recursion depth, but it
+            // must not change the PV row: PV rows are indexed by the actual
+            // search ply, not by the optional extension amount.
+            const int childPly = ply + 1;
+            if (childPly < MaxPly)
             {
-                pvTable[ply][j + 1] = pvTable[childPly][j];
+                const int childLength = std::max(
+                    0, std::min(pvLength[childPly], MaxPly - childPly));
+                for (int j = 0; j < childLength && j + 1 < MaxPly - ply; ++j)
+                {
+                    pvTable[ply][j + 1] = pvTable[childPly][j];
+                }
+                pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
             }
-            pvLength[ply] = 1 + std::min(childLength, MaxPly - ply - 1);
+            else
+            {
+                pvLength[ply] = 1;
+            }
             alpha = score;
 
             if (alpha >= beta)
@@ -780,7 +802,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // MaxPly safety check
     if (ply >= MaxPly - 1)
     {
-        return Evaluation::evaluate(board);
+        const int score = Evaluation::evaluate(board);
+        return board.getSideToMove() == ChessColor::White ? score : -score;
     }
 
     TimeManager::incrementNodeCount();

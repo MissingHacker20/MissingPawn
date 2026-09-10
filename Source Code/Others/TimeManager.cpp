@@ -354,8 +354,8 @@ else
     // Im więcej możliwych ruchów, tym szersze drzewo -> płytsza głębokość
     MoveList legalMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
+    // generateMoves() already returns legal moves.
     MoveGenerator::generateMoves(board, legalMoves, pseudoInfo);
-    MoveValidator::filterLegalMoves(board, legalMoves);
 
     int moveCount = static_cast<int>(legalMoves.size());
     if (moveCount <= 5)

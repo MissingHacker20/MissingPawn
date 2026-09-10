@@ -70,6 +70,13 @@ bool isEnPassantValid(const Board& board, Square epSquare)
         return false;
     }
 
+    // The target square must still be empty.  Besides rejecting malformed FEN,
+    // this keeps the hash definition identical to the legal EP move definition.
+    if (board.pieceAt(epSquare) != Piece::None)
+    {
+        return false;
+    }
+
     const int epFile = static_cast<int>(epSquare) % 8;
     const int epRank = static_cast<int>(epSquare) / 8;
 

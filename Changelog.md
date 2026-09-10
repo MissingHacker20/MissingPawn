@@ -36,5 +36,6 @@
 
 ## MissingPAwn v3
 - move generation update
-- improvement of bitboards
-- Transposition Table
+- transposition table
+- search update
+- pawn evaluation update

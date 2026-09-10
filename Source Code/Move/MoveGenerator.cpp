@@ -333,8 +333,10 @@ void MoveGenerator::generatePawnMoves(
                     side == ChessColor::White ? Piece::BlackPawn : Piece::WhitePawn;
 
                 // A FEN may contain a stale EP square. Do not manufacture an
-                // EP move unless the pawn that would be captured is present.
-                if (capturedRank < 0 || capturedRank >= 8 ||
+                // EP move unless the target is empty and the pawn that would
+                // be captured is present.
+                if (board.pieceAt(enPassant) != Piece::None ||
+                    capturedRank < 0 || capturedRank >= 8 ||
                     board.pieceAt(capturedSquare) != capturedPawn)
                 {
                     continue;
