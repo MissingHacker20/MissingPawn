@@ -22,6 +22,70 @@
 #include <stdexcept>
 #include <thread>
 
+namespace
+{
+char pieceLetter(Piece piece)
+{
+    switch (piece)
+    {
+    case Piece::WhitePawn: case Piece::BlackPawn: return 'P';
+    case Piece::WhiteKnight: case Piece::BlackKnight: return 'N';
+    case Piece::WhiteBishop: case Piece::BlackBishop: return 'B';
+    case Piece::WhiteRook: case Piece::BlackRook: return 'R';
+    case Piece::WhiteQueen: case Piece::BlackQueen: return 'Q';
+    case Piece::WhiteKing: case Piece::BlackKing: return 'K';
+    default: return '?';
+    }
+}
+
+char promotionLetter(MoveFlag flag)
+{
+    switch (flag)
+    {
+    case MoveFlag::PromotionKnight:
+    case MoveFlag::PromotionCaptureKnight: return 'N';
+    case MoveFlag::PromotionBishop:
+    case MoveFlag::PromotionCaptureBishop: return 'B';
+    case MoveFlag::PromotionRook:
+    case MoveFlag::PromotionCaptureRook: return 'R';
+    case MoveFlag::PromotionQueen:
+    case MoveFlag::PromotionCaptureQueen: return 'Q';
+    default: return 0;
+    }
+}
+
+bool isPromotion(MoveFlag flag)
+{
+    return promotionLetter(flag) != 0;
+}
+
+std::string sawMoveText(Board& board, const Move& move)
+{
+    std::string text;
+    if (move.flag == MoveFlag::KingCastle)
+        text = "O-O";
+    else if (move.flag == MoveFlag::QueenCastle)
+        text = "O-O-O";
+    else
+    {
+        text = squareToString(move.to);
+        if (move.capturedPiece != Piece::None || move.flag == MoveFlag::EnPassant)
+            text += 'x';
+        if (isPromotion(move.flag))
+            text += promotionLetter(move.flag);
+        if (move.flag == MoveFlag::EnPassant)
+            text += "Ep";
+    }
+
+    UndoInfo undo;
+    board.makeMove(move, undo);
+    if (MoveValidator::isKingInCheck(board, board.getSideToMove()))
+        text += '+';
+    board.undoMove(move, undo);
+    return text;
+}
+}
+
 Board UCI::board;
 
 bool UCI::debugMode = false;
@@ -178,6 +242,12 @@ bool UCI::executeCommand(
         return true;
     }
 
+    if (commandName == "saw")
+    {
+        commandSaw();
+        return true;
+    }
+
     if (commandName == "stop")
     {
         commandStop();
@@ -244,7 +314,7 @@ bool UCI::executeCommand(
 
     if (commandName == "help")
     {
-        std::cout << "info string Supported commands: uci, isready, position, perft, go, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
+        std::cout << "info string Supported commands: uci, isready, position, perft, go, saw, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
         return true;
     }
 
@@ -468,6 +538,35 @@ void UCI::commandGo(
     while (!UCI::searchStarted.load(std::memory_order_acquire))
     {
         std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+}
+
+void UCI::commandSaw()
+{
+    MoveList moves;
+    MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
+
+    for (int i = 0; i < moves.size(); ++i)
+    {
+        const Move& first = moves[i];
+        bool alreadyPrinted = false;
+        for (int j = 0; j < i; ++j)
+        {
+            if (moves[j].from == first.from)
+            {
+                alreadyPrinted = true;
+                break;
+            }
+        }
+        if (alreadyPrinted) continue;
+
+        std::cout << pieceLetter(first.piece) << squareToString(first.from) << ":";
+        for (int j = i; j < moves.size(); ++j)
+        {
+            if (moves[j].from == first.from)
+                std::cout << " " << sawMoveText(board, moves[j]);
+        }
+        std::cout << std::endl;
     }
 }
 

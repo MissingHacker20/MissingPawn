@@ -39,6 +39,8 @@ private:
     static void commandGo(
         const std::vector<std::string>& tokens);
 
+    static void commandSaw();
+
     static void commandStop();
 
     static void commandUCINewGame();

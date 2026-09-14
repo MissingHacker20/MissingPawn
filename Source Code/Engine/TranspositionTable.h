@@ -4,7 +4,6 @@
 #include <cstddef>
 
 #include "Foundation/Board.h"
-#include "Foundation/Bitboards.h"
 #include "Foundation/Move.h"
 
 class TranspositionTable
@@ -24,7 +23,6 @@ public:
         int score = 0;
         NodeType type = NodeType::Exact;
         Move bestMove{};
-        Bitboards bitboards;
         uint8_t age = 0;
     };
 
@@ -33,7 +31,7 @@ public:
     static void newSearch();
 
     static Entry* probe(uint64_t key);
-    static void store(uint64_t key, int depth, int score, NodeType type, const Move& bestMove, const Bitboards& bitboards);
+    static void store(uint64_t key, int depth, int score, NodeType type, const Move& bestMove);
 
     static size_t size();
     static size_t entriesCount();

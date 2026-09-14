@@ -300,6 +300,16 @@ Move Search::findBestMove(Board& board, int depth)
     const MoveValidator::CheckInfo pseudoInfo{};
     MoveGenerator::generateMoves(board, rootMoves, pseudoInfo);
 
+    // Reguła 50 ruchów jest terminalna także w korzeniu wyszukiwania.
+    // Nie pozwalaj, aby szybka ścieżka (np. jedyny legalny ruch) ominęła
+    // remis i zwróciła ocenę materiałową.
+    if (board.getHalfmoveClock() >= 100)
+    {
+        std::cout << "info depth 0 score cp 0" << std::endl;
+        std::cout << "bestmove 0000" << std::endl;
+        return Move{};
+    }
+
     if (rootMoves.size() == 0)
     {
         // Brak legalnych ruchów: mat lub pat (UCI wysyła 0000).
@@ -463,8 +473,7 @@ Move Search::findBestMove(Board& board, int depth)
             currentDepth,
             scoreToTT(bestScore, 0),
             TranspositionTable::NodeType::Exact,
-            bestMove,
-            Bitboards::compute(board, true));
+            bestMove);
 
         //--------------------------------------------------
         // UCI info output using completed PV table
@@ -563,8 +572,6 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     //--------------------------------------------------
     TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
     Move ttMove{};
-    Bitboards ttBitboards{};
-    bool hasTTBitboards = false;
 
     // A quiescence node can contribute captures to the PV.  Reset its row
     // here because qsearch may be entered more than once for the same ply
@@ -594,12 +601,6 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         {
             return ttScore;
         }
-
-        if (ttEntry->bitboards.allOccupied != 0)
-        {
-            ttBitboards = ttEntry->bitboards;
-            hasTTBitboards = true;
-        }
     }
 
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
@@ -627,19 +628,12 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
 
     if (inCheck)
     {
-        if (moves.size() == 0)
-        {
-            // Mat w 1 ma wartość bazową 300000; każdy kolejny półruch
-            // do mata obniża ją o 10 punktów.
-            const int mateDistance = (ply > 0) ? (ply - 1) : 0;
-            return -MateScore + (mateDistance * 10);
-        }
+        // Brak ruchów w szachu jest matem; przypadek pustej listy został
+        // obsłużony wyżej, więc tutaj zawsze istnieje legalna odpowiedź.
     }
     else
     {
-        standPat = hasTTBitboards
-            ? Evaluation::evaluate(board, ttBitboards)
-            : Evaluation::evaluate(board);
+        standPat = Evaluation::evaluate(board);
         if (board.getSideToMove() == ChessColor::Black)
         {
             standPat = -standPat;
@@ -728,20 +722,14 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
             }
         }
 
-        const int searchDepth = ply + 1 + (recaptureExtension ? 1 : 0);
-        const int score = -quiesce(board, -beta, -alpha, searchDepth);
+        const int childPly = ply + 1 + (recaptureExtension ? 1 : 0);
+        const int score = -quiesce(board, -beta, -alpha, childPly);
 
         board.undoMove(move, undoInfo);
 
         if (score > alpha)
         {
-            // Keep the qsearch continuation as part of the same, horizontal
-            // PV representation used by negamax.
             pvTable[ply][0] = move;
-            // Recapture extension changes the qsearch recursion depth, but it
-            // must not change the PV row: PV rows are indexed by the actual
-            // search ply, not by the optional extension amount.
-            const int childPly = ply + 1;
             if (childPly < MaxPly)
             {
                 const int childLength = std::max(
@@ -788,9 +776,8 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         ttType = TranspositionTable::NodeType::Exact;
     }
 
-    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
     TranspositionTable::store(
-        nodeKey, 0, scoreToTT(storeScore, ply), ttType, Move{}, storeBitboards);
+        nodeKey, 0, scoreToTT(storeScore, ply), ttType, Move{});
 
     return alpha;
 }
@@ -831,8 +818,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     //--------------------------------------------------
     TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
     Move ttMove = Move{};
-    Bitboards ttBitboards{};
-    bool hasTTBitboards = false;
 
     // Determine if this is a PV node based on original window.
     // Must be done BEFORE TT bound updates, because bounds can narrow
@@ -875,12 +860,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                 return ttScore;
             }
         }
-        // Store bitboards for potential use in evaluation
-        if (ttEntry->bitboards.allOccupied != 0)
-        {
-            ttBitboards = ttEntry->bitboards;
-            hasTTBitboards = true;
-        }
     }
 
     //--------------------------------------------------
@@ -892,10 +871,22 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, pseudoInfo);
 
-    const int endScore = terminalScore(board, moves, ply);
-    if (endScore != 0)
+    // Brak legalnych ruchów jest terminalny również wtedy, gdy pozycja jest
+    // patem. Nie wolno używać wartości 0 jako jedynego sygnału z
+    // terminalScore(), ponieważ 0 oznacza zarówno pat/remis, jak i pozycję
+    // nieterminalną. W przeciwnym razie pusta lista przechodzi do pętli
+    // wyszukiwania, zostawia bestScore == -Infinity i może zostać omyłkowo
+    // zinterpretowana jako bardzo odległy mat.
+    if (moves.size() == 0)
     {
-        return endScore;
+        return terminalScore(board, moves, ply);
+    }
+
+    // Sprawdź zegar osobno, aby po 100 półruchach nie przejść do quiescence,
+    // które mogłoby zwrócić niezerową ocenę materiału.
+    if (board.getHalfmoveClock() >= 100)
+    {
+        return 0;
     }
 
     //--------------------------------------------------
@@ -1118,11 +1109,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         ttType = TranspositionTable::NodeType::Exact;
     }
 
-    // Use stored bitboards if available, otherwise compute fresh
-    Bitboards storeBitboards = hasTTBitboards ? ttBitboards : Bitboards::compute(board, true);
-
     TranspositionTable::store(
-        nodeKey, depth, scoreToTT(storeScore, ply), ttType, bestMove, storeBitboards);
+        nodeKey, depth, scoreToTT(storeScore, ply), ttType, bestMove);
 
     return bestScore;
 }
@@ -1132,8 +1120,8 @@ int Search::terminalScore(
     const MoveList& moves,
     int ply)
 {
-    // Brak legalnych ruchów (lista jest pseudo-legalna, więc jej
-    // pustka oznacza brak ruchów w ogóle).
+    // Brak legalnych ruchów (lista jest legalna, więc jej pustka oznacza
+    // dokładnie mat albo pat).
     if (moves.size() == 0)
     {
         const bool inCheck =

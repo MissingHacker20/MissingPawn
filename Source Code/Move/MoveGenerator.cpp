@@ -34,6 +34,9 @@ void MoveGenerator::generateMoves(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateMoves(board, context.bitboards, moveList, context.checkInfo);
+    // CheckInfo handles most constraints during generation, but king moves
+    // (especially captures) require virtual-position validation because the
+    // captured piece can uncover or remove an attack on the destination square.
     MoveValidator::filterLegalMoves(board, moveList);
 }
 
@@ -57,6 +60,8 @@ void MoveGenerator::generateCaptures(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateCaptures(board, context.bitboards, moveList, context.checkInfo);
+    // Keep the final legality pass: king captures cannot be validated from the
+    // attack map of the original position alone.
     MoveValidator::filterLegalMoves(board, moveList);
 }
 
@@ -335,28 +340,26 @@ void MoveGenerator::generatePawnMoves(
                 // A FEN may contain a stale EP square. Do not manufacture an
                 // EP move unless the target is empty and the pawn that would
                 // be captured is present.
-                if (board.pieceAt(enPassant) != Piece::None ||
-                    capturedRank < 0 || capturedRank >= 8 ||
-                    board.pieceAt(capturedSquare) != capturedPawn)
+                if (board.pieceAt(enPassant) == Piece::None &&
+                    capturedRank >= 0 && capturedRank < 8 &&
+                    board.pieceAt(capturedSquare) == capturedPawn)
                 {
-                    continue;
+                    // En passant changes two occupied squares: the moving pawn
+                    // leaves `from` and the captured pawn disappears from
+                    // `capturedSquare`. Therefore neither the ordinary pin ray
+                    // test nor the normal check evasion mask is sufficient here.
+                    // Generate the pseudo-legal EP move and let the virtual
+                    // position validator decide whether the king is safe. This
+                    // preserves EP evasions that capture a checker, block a ray,
+                    // or uncover/close a line by removing the adjacent pawn.
+                    moveList.add(
+                        Move(
+                            from,
+                            enPassant,
+                            pawn,
+                            MoveFlag::EnPassant,
+                            capturedPawn));
                 }
-
-                // En passant changes two occupied squares: the moving pawn
-                // leaves `from` and the captured pawn disappears from
-                // `capturedSquare`.  Therefore neither the ordinary pin ray
-                // test nor the normal check evasion mask is sufficient here.
-                // Generate the pseudo-legal EP move and let the virtual
-                // position validator decide whether the king is safe.  This
-                // preserves EP evasions that capture a checker, block a ray,
-                // or uncover/close a line by removing the adjacent pawn.
-                moveList.add(
-                    Move(
-                        from,
-                        enPassant,
-                        pawn,
-                        MoveFlag::EnPassant,
-                        capturedPawn));
             }
         }
     }
@@ -397,11 +400,9 @@ void MoveGenerator::generateKnightMoves(
             // Piece is pinned - knights can't be pinned in chess, but handle anyway
             attacks &= checkInfo.pinRays[static_cast<int>(from)];
         }
-        if (checkInfo.inCheck)
-        {
-            // A knight can only capture the checker; it cannot block a ray.
-            attacks &= checkInfo.evasionMask & checkInfo.checkers;
-        }
+        // The evasion mask contains both the checker square and the squares
+        // between a sliding checker and the king. A knight may legally block
+        // a sliding check by jumping to one of those intermediate squares.
 
         while (attacks)
         {

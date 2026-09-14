@@ -91,7 +91,7 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
     return nullptr;
 }
 
-void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type, const Move& bestMove, const Bitboards& bitboards)
+void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type, const Move& bestMove)
 {
     if (!table) return;
 
@@ -106,7 +106,6 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
             entry->score = score;
             entry->type = type;
             entry->bestMove = bestMove;
-            entry->bitboards = bitboards;
             entry->age = currentAge;
         }
     }
@@ -117,7 +116,6 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
         entry->score = score;
         entry->type = type;
         entry->bestMove = bestMove;
-        entry->bitboards = bitboards;
         entry->age = currentAge;
     }
 }

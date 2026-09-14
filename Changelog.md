@@ -34,7 +34,7 @@
 - tactical evaluation
 - updated move generator
 
-## MissingPAwn v3
+## MissingPawn v3
 - move generation update
 - transposition table
 - search update

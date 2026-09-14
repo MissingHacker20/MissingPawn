@@ -248,6 +248,151 @@ bool MoveValidator::isMoveLegal(
     const Board& board,
     const Move& move)
 {
+    // Fast path: simple quiet moves and captures by non-king, non-pinned pieces
+    // that don't involve special flags.
+    const ChessColor side = board.getSideToMove();
+    const Piece king = side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing;
+
+    // King moves always need full validation (castling, moving into check, etc.)
+    if (move.piece == king)
+    {
+        return isMoveLegalSlow(board, move);
+    }
+
+    // En passant needs full validation (removes two pawns, complex occupancy change)
+    if (move.flag == MoveFlag::EnPassant)
+    {
+        return isMoveLegalSlow(board, move);
+    }
+
+    // Promotions need full validation (piece type changes)
+    if (move.flag >= MoveFlag::PromotionKnight &&
+        move.flag <= MoveFlag::PromotionCaptureQueen)
+    {
+        return isMoveLegalSlow(board, move);
+    }
+
+    // Castling needs full validation
+    if (move.flag == MoveFlag::KingCastle || move.flag == MoveFlag::QueenCastle)
+    {
+        return isMoveLegalSlow(board, move);
+    }
+
+    // For non-king, non-special moves, the generator already applied pin and check constraints.
+    // We only need to verify the king isn't left in check by a discovered attack.
+    // This is only possible if the moving piece was blocking a slider attack on the king.
+    // Check if the from-square lies on a ray between king and an enemy slider.
+
+    const Square kingSquare = board.getKingSquare(side);
+    if (kingSquare == Square::None)
+    {
+        return false;
+    }
+
+    // Quick check: is the moving piece on the same line as the king?
+    const int fromIdx = static_cast<int>(move.from);
+    const int kingIdx = static_cast<int>(kingSquare);
+    const int fromFile = fromIdx % 8;
+    const int fromRank = fromIdx / 8;
+    const int kingFile = kingIdx % 8;
+    const int kingRank = kingIdx / 8;
+
+    bool sameLine = (fromFile == kingFile) || (fromRank == kingRank);
+    bool sameDiag = (std::abs(fromFile - kingFile) == std::abs(fromRank - kingRank));
+
+    if (!sameLine && !sameDiag)
+    {
+        // Moving piece is not on any ray from king - cannot expose check
+        return true;
+    }
+
+    // Piece is aligned with king - need to check if it was blocking an enemy slider
+    // Use the precomputed enemy attacks from CheckInfo if available, otherwise compute
+    // For fast path, we do a minimal check: verify the destination square and the
+    // path between from and king are not attacked by enemy sliders along this ray.
+
+    // If the move is a capture, the captured piece might have been the blocker
+    // This is rare - fall back to slow path for safety
+    if (move.capturedPiece != Piece::None)
+    {
+        return isMoveLegalSlow(board, move);
+    }
+
+    // For quiet moves, check if moving the piece exposes the king to a slider attack
+    // along the same ray. We only need to check the ray from king through from-square.
+    const int fileDiff = fromFile - kingFile;
+    const int rankDiff = fromRank - kingRank;
+
+    int fileStep = 0;
+    int rankStep = 0;
+    if (fileDiff != 0) fileStep = (fileDiff > 0) ? 1 : -1;
+    if (rankDiff != 0) rankStep = (rankDiff > 0) ? 1 : -1;
+
+    // Scan from king towards the moving piece (exclusive of king, inclusive of from)
+    int f = kingFile + fileStep;
+    int r = kingRank + rankStep;
+    bool foundMovingPiece = false;
+
+    while (f >= 0 && f < 8 && r >= 0 && r < 8)
+    {
+        Square sq = static_cast<Square>(r * 8 + f);
+        if (sq == move.from)
+        {
+            foundMovingPiece = true;
+            // Continue scanning beyond the moving piece to see if there's an enemy slider
+            f += fileStep;
+            r += rankStep;
+            continue;
+        }
+
+        if (foundMovingPiece)
+        {
+            // Beyond the moving piece - check for enemy slider
+            Piece piece = board.pieceAt(sq);
+            if (piece != Piece::None)
+            {
+                ChessColor pieceColor = getPieceColor(piece);
+                if (pieceColor != side)
+                {
+                    // Enemy piece found - check if it's a slider on this ray
+                    bool isOrtho = (fileStep == 0 || rankStep == 0);
+                    bool isDiag = (fileStep != 0 && rankStep != 0);
+
+                    if ((isOrtho && (piece == Piece::WhiteRook || piece == Piece::BlackRook ||
+                                     piece == Piece::WhiteQueen || piece == Piece::BlackQueen)) ||
+                        (isDiag && (piece == Piece::WhiteBishop || piece == Piece::BlackBishop ||
+                                    piece == Piece::WhiteQueen || piece == Piece::BlackQueen)))
+                    {
+                        // Enemy slider found behind moving piece - moving exposes check!
+                        return false;
+                    }
+                }
+                // Any piece blocks further rays
+                break;
+            }
+        }
+        else
+        {
+            // Between king and moving piece - should be empty (was validated by generator)
+            // But if there's a piece here, it blocks the ray
+            if (board.pieceAt(sq) != Piece::None)
+            {
+                break;
+            }
+        }
+
+        f += fileStep;
+        r += rankStep;
+    }
+
+    // No discovered check found - move is legal
+    return true;
+}
+
+bool MoveValidator::isMoveLegalSlow(
+    const Board& board,
+    const Move& move)
+{
     const Piece target = board.pieceAt(move.to);
     if (target == Piece::WhiteKing || target == Piece::BlackKing)
         return false;
@@ -287,7 +432,7 @@ bool MoveValidator::isMoveLegal(
             return false;
     }
 
-    return virtualKingSafe(pieces, side, kingSquare);
+return virtualKingSafe(pieces, side, kingSquare);
 }
 
 bool MoveValidator::isSquareAttacked(
@@ -597,8 +742,15 @@ int MoveValidator::seeRecursive(
         return 0;
     }
 
-    // Usuń atakującego z planszy (symulacja jego zbicia)
+    // Przenieś atakującego na pole wymiany. Samo usunięcie go z pola
+    // początkowego nie wystarcza: kolejny atakujący musi widzieć figurę,
+    // która właśnie stoi na `square`, a promienie muszą uwzględniać jej
+    // obecność jako blokera.
     board.removePiece(attacker, fromSquare);
+    const Piece capturedOnSquare = board.pieceAt(square);
+    if (capturedOnSquare != Piece::None)
+        board.removePiece(capturedOnSquare, square);
+    board.setPiece(attacker, square);
 
     // Rekurencyjnie: strona przeciwna może teraz odbić.
     // Od wyniku "odbicia" odejmujemy wartość figury, którą właśnie
@@ -636,17 +788,27 @@ int MoveValidator::see(
 
     Board copy = board;
 
-    // Usuń bity kawałek (victim) z kopii ZANIM rozpoczniemy rekurencję SEE.
-    // Bez tego figura broniona tylko przez samą siebie (tj. wisząca) byłaby
-    // błędnie uznawana za chronioną – `leastValuableAttacker` mógłby "zbić"
-    // tą samą figurę, która jest ofiarą, i zaniżać stratę (gubienie hetmana).
+    // Wykonaj pierwsze bicie również w kopii. Bez postawienia pierwszego
+    // atakującego na polu wymiany SEE analizuje odbicie na pustym polu i może
+    // uznać QxR za bezpieczne, mimo że hetman jest natychmiast odbijany.
     copy.removePiece(victim, square);
 
-    return seeRecursive(
+    Square fromSquare = Square::None;
+    const Piece attacker = leastValuableAttacker(
+        copy, square, attackerToMove, fromSquare);
+    if (attacker == Piece::None)
+        return 0;
+
+    copy.removePiece(attacker, fromSquare);
+    copy.setPiece(attacker, square);
+
+    const int opponentGain = seeRecursive(
         copy,
         square,
-        attackerToMove,
-        pieceValue(victim));
+        oppositeColor(attackerToMove),
+        pieceValue(attacker));
+
+    return pieceValue(victim) - opponentGain;
 }
 
 namespace
@@ -945,6 +1107,9 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
         Bitboard enemyKing    = board.getBitboard(enemy == ChessColor::White ? Piece::WhiteKing   : Piece::BlackKing);
 
         // Pawn checks
+        // To find pawn attackers of the king, use the inverse attack mask:
+        // white pawns attack upward, so a white pawn checking this square is
+        // found through the black-pawn mask (and vice versa).
         Bitboard pawnAttacks = (enemy == ChessColor::White)
             ? AttackTables::blackPawnAttacks(info.kingSquare)
             : AttackTables::whitePawnAttacks(info.kingSquare);
@@ -1083,18 +1248,15 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
                                 // This piece is pinned!
                                 info.pinned |= (1ULL << static_cast<int>(sliderSq));
 
-                                // Pin ray: squares between slider and king (inclusive) + squares beyond slider towards enemy
-                                Bitboard ray = getBetweenRay(info.kingSquare, sliderSq) | (1ULL << static_cast<int>(sliderSq));
-
-                                // Extend ray beyond slider towards enemy
-                                int ef = f + AllDirs[d][0];
-                                int er = r + AllDirs[d][1];
-                                while (ef >= 0 && ef < 8 && er >= 0 && er < 8)
-                                {
-                                    ray |= (1ULL << (er * 8 + ef));
-                                    ef += AllDirs[d][0];
-                                    er += AllDirs[d][1];
-                                }
+                                // A pinned piece may move only on the pin line,
+                                // including a capture of the pinning slider. Do
+                                // not extend the ray beyond that slider: those
+                                // squares are not reachable without leaving the
+                                // king exposed (and could incorrectly allow a
+                                // pinned rook to move off the line).
+                                Bitboard ray = getBetweenRay(info.kingSquare, sq) |
+                                    (1ULL << static_cast<int>(sliderSq)) |
+                                    (1ULL << static_cast<int>(sq));
 
                                 info.pinRays[static_cast<int>(sliderSq)] = ray;
                             }
