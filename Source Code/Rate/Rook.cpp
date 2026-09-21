@@ -233,11 +233,16 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
         }
 
         // Rook cut-off (tylko w EG)
-        const int cutOff = rookCutOffBonus(bitboards, color, file, rank);
-        if (cutOff > 0)
-        {
-            score += (cutOff * (24 - phase)) / 24;
-        }
+const int cutOff = rookCutOffBonus(bitboards, color, file, rank);
+    if (cutOff > 0)
+    {
+        // TODO S(150, 220) for RookCutOff
+        // cutOff returns 150 for medium cutoff, 220 for strong cutoff
+        // We scale the MG/EG values proportionally
+        const int mg = cutOff * 150 / 150;  // This is just cutOff, but keeps the pattern clear
+        const int eg = cutOff * 220 / 150;
+        score += (mg * phase + eg * (24 - phase)) / 24;
+    }
 
         const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |

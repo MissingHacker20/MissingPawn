@@ -411,7 +411,8 @@ int breakPotential(const Bitboards& bitboards, ChessColor color, Square square)
 
 int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int PassedBonusBase = 60;
+constexpr int PassedBonusBaseMG = 60;
+    constexpr int PassedBonusBaseEG = 89;
     constexpr int CandidatePassedBonusBase = 40;
     constexpr int ProtectedPassedBonus = 180;
     constexpr int ConnectedBonus = 35;
@@ -425,7 +426,7 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
     constexpr int IslandPenaltyMG = 30;
     constexpr int IslandPenaltyEG = 60;
     constexpr int MajorityBonusMG = 30;
-    constexpr int MajorityBonusEG = 80;
+    constexpr int MajorityBonusEG = 78;
     constexpr int BreakPotentialBonus = 1;
     constexpr int LeverBonus = 40;
     constexpr int CentralBonus = 30;
@@ -454,7 +455,8 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
 
         // Materiał pionka jest stały; zaawansowanie samo w sobie ma tylko
         // niewielką wartość i nie może być doliczane ponownie jako passed pawn.
-        score += 1000 + progress * 10;
+        const int pawnMaterial = (1000 * phase + 999 * (24 - phase)) / 24;
+        score += pawnMaterial + progress * 10;
 
         if (isCentralPawn(square)) score += CentralBonus;
         if (protectedPawn) score += ProtectedBonus;
@@ -467,7 +469,8 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
         {
             ++passedCount;
             static constexpr int PassedProgressBonus[8] = {0, 0, 25, 70, 150, 280, 480, 750};
-            score += PassedBonusBase + PassedProgressBonus[std::min(progress, 7)];
+            const int passedBonusBase = (PassedBonusBaseMG * phase + PassedBonusBaseEG * (24 - phase)) / 24;
+        score += passedBonusBase + PassedProgressBonus[std::min(progress, 7)];
             // Zablokowany wolny pion jest znacznie mniej praktycznie wart.
             if (isLockedPawn(bitboards, color, square)) score -= 120;
             // A blocker or an unsafe promotion route reduces practical value.
@@ -547,3 +550,4 @@ int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards,
 
     return score;
 }
+

@@ -77,11 +77,18 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
     // King safety (MG): shield, enemy pressure and open files.  The pressure
     // curve is deliberately non-linear so one harmless attack is inexpensive.
     int mg = 0;
+    int shield_mg = 0;
+    int shield_eg = 0;
     const int shieldRank = rank + ((color == ChessColor::White) ? 1 : -1);
     if (shieldRank >= 0 && shieldRank < 8)
         for (int f = file - 1; f <= file + 1; ++f)
             if (f >= 0 && f < 8 && getBit(ownPawns, static_cast<Square>(shieldRank * 8 + f)))
-                mg += (f == file) ? 150 : 90;
+            {
+                shield_mg += (f == file) ? 150 : 90;
+                shield_eg += (f == file) ? -1 : 0;
+            }
+
+    mg += shield_mg;
 
     const int pressure = countKingZoneAttacks(bitboards, color);
     mg -= pressure * (25 + std::min(35, pressure * 3));
@@ -95,7 +102,7 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
     // King activity (EG): centralisation plus proximity to the nearest own pawn.
     // New formula: 400 - centerDist * 65 + pawn proximity bonus
     const int centerDist = std::abs(file * 2 - 7) + std::abs(rank * 2 - 7);
-    int eg = 400 - centerDist * 65;
+    int eg_activity = 252 - centerDist * 65;
     int minDist = 14;
     Bitboard pawns = ownPawns;
     while (pawns)
@@ -104,7 +111,8 @@ int KingEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
         const int p = static_cast<int>(psq);
         minDist = std::min(minDist, std::abs(file - p % 8) + std::abs(rank - p / 8));
     }
-    if (ownPawns) eg += (14 - minDist) * 20;
+    if (ownPawns) eg_activity += (14 - minDist) * 20;
+    int eg = eg_activity + shield_eg;
 
     // Płynne taperowanie: MG King Safety × phase + EG King Activity × (1 - phase)
     // King safety naturalnie znika w końcówce, king activity rośnie.
