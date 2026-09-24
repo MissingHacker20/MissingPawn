@@ -153,7 +153,7 @@ int Evaluation::evaluate(const Board& board)
 {
     // Bitboardy liczone JEDEN raz na całą ocenę - na podstawie danych już
     // wygenerowanych przez silnik (Board, AttackTables, CheckInfo).
-    const Bitboards bitboards = Bitboards::compute(board, true);
+    const Bitboards bitboards = Bitboards::computeHeavy(board);
 
     // Ocena taktyczna (SEE / wiszące figury) jest liczona JEDEN raz
     // dla całej planszy i zwraca wynik netto (biały - czarny), co

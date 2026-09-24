@@ -273,6 +273,12 @@ bool UCI::executeCommand(
             {
                 g_openingBookEnabled = UCIOptions::getBoolOption("BookMoves");
             }
+            if (std::find(tokens.begin(), tokens.end(), "Hash") != tokens.end())
+            {
+                int hashMB = UCIOptions::getIntOption("Hash");
+                hashMB = std::max(1, std::min(hashMB, 4096));
+                Search::initTranspositionTable(static_cast<size_t>(hashMB));
+            }
             std::cout << "info string Option processed." << std::endl;
         }
         return true;
@@ -342,12 +348,11 @@ void UCI::run()
         }
     }
 
-    // Na koniec upewniamy się, że wątek searchu został dołączony
-    // (np. przy zamknięciu wejścia / EOF zamiast jawnego "quit").
-    // Nie wywołujemy stop() - niech search się zakończy naturalnie
-    // po upływie limitu czasu.
+    // EOF również musi zatrzymać wyszukiwanie. Przy "go infinite"
+    // samo join() mogłoby zablokować proces na zawsze.
     if (searchThread.joinable())
     {
+        TimeManager::stop();
         searchThread.join();
     }
 }
@@ -369,12 +374,11 @@ void UCI::commandIsReady()
 
 void UCI::commandQuit()
 {
-    // Nie wywołujemy TimeManager::stop() tutaj - niech search
-    // się zakończy naturalnie (gdy osiągnie głębokość lub upłynie czas).
-    // Wątek zostanie dołączony na końcu pętli run().
-
+    // UCI wymaga natychmiastowego zakończenia wyszukiwania przed wyjściem.
+    // Jest to szczególnie ważne dla "go infinite", gdzie nie ma limitu czasu.
     if (searchThread.joinable())
     {
+        TimeManager::stop();
         searchThread.join();
     }
 }

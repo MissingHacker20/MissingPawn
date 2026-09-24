@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "Foundation/Board.h"
 #include "Foundation/Move.h"
 
 class TranspositionTable

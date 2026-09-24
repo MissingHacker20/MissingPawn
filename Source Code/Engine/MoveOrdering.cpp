@@ -87,10 +87,10 @@ int MoveOrdering::scoreMove(
         // MVV-LVA: wyżej bicia wartościowych bierek przez mniej wartościowe
         score += victim * 100 - attacker;
 
-        // SEE jest najdroższe dla wymian małej wartości. Stosujemy je tylko
-        // dla podejrzanych bić (atakujący jest co najmniej tak wartościowy jak
-        // ofiara); oczywiście dobre bicia MVV-LVA nie potrzebują pełnej SEE.
-        if (attacker >= victim)
+        // SEE doprecyzowuje MVV-LVA także dla pozornie dobrych bić.
+        // Ograniczamy je do zwykłych bić; promocje są już porządkowane osobno
+        // przez premię poniżej, a en passant nie ma klasycznej ofiary na `to`.
+        if (move.flag == MoveFlag::Capture)
         {
             score += MoveValidator::see(board, move.to);
         }

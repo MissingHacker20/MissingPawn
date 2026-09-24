@@ -1,8 +1,8 @@
 #include "Engine/TranspositionTable.h"
 
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
+#include <limits>
 #include <new>
 
 #if defined(_WIN32)
@@ -23,14 +23,19 @@ void TranspositionTable::initialize(size_t sizeMB)
 {
     if (table)
     {
+#if defined(_WIN32)
+        _aligned_free(table);
+#else
         std::free(table);
+#endif
+        table = nullptr;
     }
 
     const size_t sizeBytes = sizeMB * 1024 * 1024;
     const size_t numEntries = sizeBytes / EntrySize;
 
     size_t powerOfTwo = 1;
-    while ((powerOfTwo << 1) <= numEntries)
+    while (powerOfTwo <= numEntries / 2)
     {
         powerOfTwo <<= 1;
     }
@@ -52,7 +57,6 @@ void TranspositionTable::initialize(size_t sizeMB)
     }
 
     clear();
-    std::cout << "Transposition table initialized: " << sizeMB << " MB (" << tableSize << " entries)" << std::endl;
 }
 
 void TranspositionTable::clear()
@@ -64,6 +68,7 @@ void TranspositionTable::clear()
             table[i] = Entry{};
         }
     }
+    currentAge = 0;
 }
 
 void TranspositionTable::newSearch()
@@ -98,25 +103,28 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
     const size_t index = key & mask;
     Entry* entry = &table[index];
 
-    if (entry->key == key)
+    const bool sameKey = entry->key == key;
+    const bool empty = entry->key == 0;
+    const uint8_t ageDelta = static_cast<uint8_t>(currentAge - entry->age);
+    const bool older = ageDelta != 0;
+
+    // Prefer deeper entries, but let a new search replace stale shallow data.
+    // A move-bearing entry is kept on equal depth because it improves ordering.
+    if (sameKey)
     {
-        if (depth >= entry->depth)
+        if (depth >= entry->depth || bestMove.from != Square::None)
         {
             entry->depth = depth;
             entry->score = score;
             entry->type = type;
-            entry->bestMove = bestMove;
+            if (bestMove.from != Square::None)
+                entry->bestMove = bestMove;
             entry->age = currentAge;
         }
     }
-    else if (entry->key == 0 || currentAge > entry->age || depth >= entry->depth)
+    else if (empty || older || depth >= entry->depth)
     {
-        entry->key = key;
-        entry->depth = depth;
-        entry->score = score;
-        entry->type = type;
-        entry->bestMove = bestMove;
-        entry->age = currentAge;
+        *entry = Entry{key, depth, score, type, bestMove, currentAge};
     }
 }
 

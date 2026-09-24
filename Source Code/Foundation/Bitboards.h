@@ -43,5 +43,7 @@ struct Bitboards
     // `withCheckInfo=false` pomija kosztowne liczenie szachów/przypięć
     // (checkers/pinned pozostają wyzerowane) - używane w gorącej ścieżce
     // generatora ruchów.
-    static Bitboards compute(const Board &board, bool withCheckInfo = true);
+    static Bitboards computeLight(const Board& board);
+    static Bitboards computeHeavy(const Board& board);
+    static Bitboards compute(const Board& board, bool withCheckInfo = true);
 };

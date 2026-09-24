@@ -395,7 +395,7 @@ Move Search::findBestMove(Board& board, int depth)
 
         for (int index = 0; index < moves.size(); ++index)
         {
-            if (shouldStopSearch())
+if (shouldStopSearch())
             {
                 break;
             }
@@ -610,6 +610,12 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     if (inCheck)
     {
         MoveGenerator::generateMoves(board, moves, pseudoInfo);
+        if (moves.size() == 0)
+        {
+            // QSearch nie ma stand-pat w szachu: brak legalnej odpowiedzi
+            // oznacza mata, nie ocenę statyczną równą zero.
+            return -MateScore + ply * 10;
+        }
     }
     else
     {
@@ -699,30 +705,10 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         UndoInfo undoInfo;
         board.makeMove(move, undoInfo);
 
-        // Selective recapture extension: only for high-value captures (rook/queen)
-        // or when SEE is unclear (near zero, meaning tactical complexity)
-        bool recaptureExtension = false;
-        if (move.capturedPiece != Piece::None)
-        {
-            int victimValue = valueOfPiece(move.capturedPiece);
-
-            // Extend if: rook/queen capture, or SEE within +/-2000 MP.
-            if (victimValue >= 5000 || (seeScore > -2000 && seeScore < 2000))
-            {
-                MoveList oppMoves;
-                MoveGenerator::generateLegalCaptures(board, oppMoves, pseudoInfo);
-                for (int j = 0; j < oppMoves.size(); ++j)
-                {
-                    if (oppMoves[j].to == move.to && oppMoves[j].capturedPiece != Piece::None)
-                    {
-                        recaptureExtension = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        const int childPly = ply + 1 + (recaptureExtension ? 1 : 0);
+        // Recaptures are already part of the capture continuation searched by
+        // QSearch. Do not fake an extra ply here: PV rows represent real game
+        // plies, and skipping a row corrupts PV reconstruction after a recapture.
+        const int childPly = ply + 1;
         const int score = -quiesce(board, -beta, -alpha, childPly);
 
         board.undoMove(move, undoInfo);

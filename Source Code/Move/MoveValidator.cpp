@@ -105,19 +105,21 @@ void MoveValidator::filterLegalMoves(
     const Board& board,
     MoveList& moveList)
 {
-    MoveList legalMoves;
+    // Filtruj w miejscu: MoveList ma stałą pamięć na stosie, więc dodatkowa
+    // lista tylko kopiuje ruchy i zwiększa koszt każdej generacji.
+    int writeIndex = 0;
+    const int moveCount = moveList.size();
 
-    for (int i = 0; i < moveList.size(); i++)
+    for (int readIndex = 0; readIndex < moveCount; ++readIndex)
     {
-        const Move& move = moveList[i];
-
+        const Move move = moveList[readIndex];
         if (isMoveLegal(board, move))
         {
-            legalMoves.add(move);
+            moveList[writeIndex++] = move;
         }
     }
 
-    moveList = legalMoves;
+    moveList.setSize(writeIndex);
 }
 
 namespace

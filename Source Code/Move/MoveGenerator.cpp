@@ -11,9 +11,6 @@ namespace
 inline int sideIndex(ChessColor c) { return c == ChessColor::White ? 0 : 1; }
 }
 
-// Lokalny pomocnik: promień między dwoma polami.
-static Bitboard getBetweenRay(Square from, Square to);
-
 void MoveGenerator::generateMoves(
     const Board& board,
     MoveList& moveList,
@@ -21,7 +18,7 @@ void MoveGenerator::generateMoves(
 {
     MoveGenerationContext context;
     context.side = board.getSideToMove();
-    context.bitboards = Bitboards::compute(board, false);
+    context.bitboards = Bitboards::computeLight(board);
     context.checkInfo = checkInfo.kingSquare == Square::None
         ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
     const int side = sideIndex(context.side);
@@ -47,7 +44,7 @@ void MoveGenerator::generateCaptures(
 {
     MoveGenerationContext context;
     context.side = board.getSideToMove();
-    context.bitboards = Bitboards::compute(board, false);
+    context.bitboards = Bitboards::computeLight(board);
     context.checkInfo = checkInfo.kingSquare == Square::None
         ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
     const int side = sideIndex(context.side);
@@ -92,9 +89,7 @@ void MoveGenerator::generateMoves(
         generateKnightMoves(board, bitboards, moveList, legalInfo);
         generatePawnMoves(board, bitboards, moveList, legalInfo);
     }
-}
-
-void MoveGenerator::generateCaptures(
+}void MoveGenerator::generateCaptures(
     const Board& board,
     const Bitboards& bitboards,
     MoveList& moveList,
@@ -363,9 +358,7 @@ void MoveGenerator::generatePawnMoves(
             }
         }
     }
-}
-
-void MoveGenerator::generateKnightMoves(
+}void MoveGenerator::generateKnightMoves(
     const Board& board,
     const Bitboards& bitboards,
     MoveList& moveList,
@@ -453,25 +446,9 @@ void MoveGenerator::generateBishopMoves(
         if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
-            Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
+            // Evasion mask jest wyliczana raz w computeCheckInfo().
 
-            // Add blocking squares for sliding checkers
-            Bitboard checkers = checkInfo.checkers;
-            while (checkers)
-            {
-                Square checkerSq = popLeastSignificantBit(checkers);
-                // Only consider sliding pieces (bishop, rook, queen) for blocking
-                Piece checkerPiece = board.pieceAt(checkerSq);
-                if (checkerPiece == Piece::WhiteBishop || checkerPiece == Piece::BlackBishop ||
-                    checkerPiece == Piece::WhiteRook || checkerPiece == Piece::BlackRook ||
-                    checkerPiece == Piece::WhiteQueen || checkerPiece == Piece::BlackQueen)
-                {
-                    // Add squares between king and checker (exclusive)
-                    Bitboard between = getBetweenRay(checkInfo.kingSquare, checkerSq);
-                    allowedSquares |= between;
-                }
-            }
-            attacks &= allowedSquares;
+            attacks &= checkInfo.evasionMask;
         }
 
         while (attacks)
@@ -523,25 +500,9 @@ void MoveGenerator::generateRookMoves(
         if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
-            Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
+            // Evasion mask jest wyliczana raz w computeCheckInfo().
 
-            // Add blocking squares for sliding checkers
-            Bitboard checkers = checkInfo.checkers;
-            while (checkers)
-            {
-                Square checkerSq = popLeastSignificantBit(checkers);
-                // Only consider sliding pieces (bishop, rook, queen) for blocking
-                Piece checkerPiece = board.pieceAt(checkerSq);
-                if (checkerPiece == Piece::WhiteBishop || checkerPiece == Piece::BlackBishop ||
-                    checkerPiece == Piece::WhiteRook || checkerPiece == Piece::BlackRook ||
-                    checkerPiece == Piece::WhiteQueen || checkerPiece == Piece::BlackQueen)
-                {
-                    // Add squares between king and checker (exclusive)
-                    Bitboard between = getBetweenRay(checkInfo.kingSquare, checkerSq);
-                    allowedSquares |= between;
-                }
-            }
-            attacks &= allowedSquares;
+            attacks &= checkInfo.evasionMask;
         }
 
         while (attacks)
@@ -593,25 +554,9 @@ void MoveGenerator::generateQueenMoves(
         if (checkInfo.inCheck)
         {
             // In check, only moves that capture checkers or block are allowed
-            Bitboard allowedSquares = checkInfo.checkers; // Can capture checkers
+            // Evasion mask jest wyliczana raz w computeCheckInfo().
 
-            // Add blocking squares for sliding checkers
-            Bitboard checkers = checkInfo.checkers;
-            while (checkers)
-            {
-                Square checkerSq = popLeastSignificantBit(checkers);
-                // Only consider sliding pieces (bishop, rook, queen) for blocking
-                Piece checkerPiece = board.pieceAt(checkerSq);
-                if (checkerPiece == Piece::WhiteBishop || checkerPiece == Piece::BlackBishop ||
-                    checkerPiece == Piece::WhiteRook || checkerPiece == Piece::BlackRook ||
-                    checkerPiece == Piece::WhiteQueen || checkerPiece == Piece::BlackQueen)
-                {
-                    // Add squares between king and checker (exclusive)
-                    Bitboard between = getBetweenRay(checkInfo.kingSquare, checkerSq);
-                    allowedSquares |= between;
-                }
-            }
-            attacks &= allowedSquares;
+            attacks &= checkInfo.evasionMask;
         }
 
         while (attacks)
@@ -793,7 +738,6 @@ void MoveGenerator::generateKnightCaptures(
         }
     }
 }
-
 void MoveGenerator::generateBishopCaptures(
     const Board& board,
     const Bitboards& bitboards,
@@ -870,43 +814,3 @@ void MoveGenerator::generateKingCaptures(
     }
 }
 
-// Helper function: returns ray bitboard between two squares (exclusive of both ends)
-static Bitboard getBetweenRay(Square from, Square to)
-{
-    int fromIdx = static_cast<int>(from);
-    int toIdx = static_cast<int>(to);
-    int fromFile = fromIdx % 8;
-    int fromRank = fromIdx / 8;
-    int toFile = toIdx % 8;
-    int toRank = toIdx / 8;
-
-    int fileDiff = toFile - fromFile;
-    int rankDiff = toRank - fromRank;
-
-    int fileStep = 0;
-    int rankStep = 0;
-
-    if (fileDiff != 0) fileStep = (fileDiff > 0) ? 1 : -1;
-    if (rankDiff != 0) rankStep = (rankDiff > 0) ? 1 : -1;
-
-    // Validate it's a straight line or diagonal
-    if (fileStep != 0 && rankStep != 0 && std::abs(fileDiff) != std::abs(rankDiff))
-        return 0;
-    if (fileStep == 0 && rankStep == 0)
-        return 0;
-
-    Bitboard ray = 0;
-    int f = fromFile + fileStep;
-    int r = fromRank + rankStep;
-
-    while (f >= 0 && f < 8 && r >= 0 && r < 8)
-    {
-        if (f == toFile && r == toRank)
-            break;
-        ray |= (1ULL << (r * 8 + f));
-        f += fileStep;
-        r += rankStep;
-    }
-
-    return ray;
-}

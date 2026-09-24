@@ -17,6 +17,11 @@ public:
     }
 
     void clear() { count = 0; }
+    void setSize(int newSize)
+    {
+        if (newSize >= 0 && newSize <= Capacity)
+            count = newSize;
+    }
     int size() const { return count; }
 
     const Move& operator[](int index) const

@@ -39,3 +39,4 @@
 - transposition table
 - search update
 - pawn evaluation update
+- If-Else Maks System

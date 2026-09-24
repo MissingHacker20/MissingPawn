@@ -26,5 +26,10 @@ public:
 
 private:
 
-    static int history[2][64][64];
+    // Historia rozróżnia stronę i typ bierki, aby np. ruch skoczkiem
+    // nie wpływał na kolejność ruchów wieży z tego samego pola.
+    static int history[2][static_cast<int>(Piece::Count)][64][64];
+
+    static int& value(ChessColor side, const Move& move);
+    static bool isValid(const Move& move);
 };
