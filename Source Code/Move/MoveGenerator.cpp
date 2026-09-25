@@ -31,9 +31,9 @@ void MoveGenerator::generateMoves(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateMoves(board, context.bitboards, moveList, context.checkInfo);
-    // CheckInfo handles most constraints during generation, but king moves
-    // (especially captures) require virtual-position validation because the
-    // captured piece can uncover or remove an attack on the destination square.
+    // CheckInfo reduces the candidate set during generation. Keep the final
+    // legality pass until every generated move type is covered by dedicated
+    // virtual-position tests; this prevents rare discovered-line regressions.
     MoveValidator::filterLegalMoves(board, moveList);
 }
 
@@ -57,8 +57,8 @@ void MoveGenerator::generateCaptures(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateCaptures(board, context.bitboards, moveList, context.checkInfo);
-    // Keep the final legality pass: king captures cannot be validated from the
-    // attack map of the original position alone.
+    // Captures share the same safety requirement: retain the final legality
+    // pass because king captures and en-passant alter occupancy asymmetrically.
     MoveValidator::filterLegalMoves(board, moveList);
 }
 

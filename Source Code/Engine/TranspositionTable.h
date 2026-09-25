@@ -36,8 +36,13 @@ public:
     static size_t entriesCount();
 
 private:
+    static constexpr size_t ClusterSize = 4;
+
+    // The index addresses a cluster, not a single entry.  Keeping a few
+    // alternatives at each index greatly reduces destructive collisions in
+    // tactical positions where many nearby keys map to the same slot.
     static Entry* table;
-    static size_t tableSize;
+    static size_t clusterCount;
     static size_t mask;
     static uint8_t currentAge;
 };

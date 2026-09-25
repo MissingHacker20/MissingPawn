@@ -15,7 +15,7 @@ namespace
 }
 
 TranspositionTable::Entry* TranspositionTable::table = nullptr;
-size_t TranspositionTable::tableSize = 0;
+size_t TranspositionTable::clusterCount = 0;
 size_t TranspositionTable::mask = 0;
 uint8_t TranspositionTable::currentAge = 0;
 
@@ -33,21 +33,22 @@ void TranspositionTable::initialize(size_t sizeMB)
 
     const size_t sizeBytes = sizeMB * 1024 * 1024;
     const size_t numEntries = sizeBytes / EntrySize;
+    const size_t numClusters = numEntries / ClusterSize;
 
     size_t powerOfTwo = 1;
-    while (powerOfTwo <= numEntries / 2)
+    while (powerOfTwo <= numClusters / 2)
     {
         powerOfTwo <<= 1;
     }
 
-    tableSize = powerOfTwo;
-    mask = tableSize - 1;
+    clusterCount = powerOfTwo;
+    mask = clusterCount - 1;
 
 #if defined(_WIN32)
-    table = static_cast<Entry*>(_aligned_malloc(tableSize * EntrySize, 64));
+    table = static_cast<Entry*>(_aligned_malloc(clusterCount * ClusterSize * EntrySize, 64));
 #else
     const size_t allocationSize =
-        ((tableSize * EntrySize + 63) / 64) * 64;
+        ((clusterCount * ClusterSize * EntrySize + 63) / 64) * 64;
     table = static_cast<Entry*>(std::aligned_alloc(64, allocationSize));
 #endif
     if (!table)
@@ -63,7 +64,7 @@ void TranspositionTable::clear()
 {
     if (table)
     {
-        for (size_t i = 0; i < tableSize; ++i)
+        for (size_t i = 0; i < clusterCount * ClusterSize; ++i)
         {
             table[i] = Entry{};
         }
@@ -85,12 +86,13 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
 {
     if (!table) return nullptr;
 
-    const size_t index = key & mask;
-    Entry* entry = &table[index];
+    const size_t clusterIndex = key & mask;
+    Entry* cluster = table + clusterIndex * ClusterSize;
 
-    if (entry->key == key)
+    for (size_t i = 0; i < ClusterSize; ++i)
     {
-        return entry;
+        if (cluster[i].key == key)
+            return &cluster[i];
     }
 
     return nullptr;
@@ -100,40 +102,53 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
 {
     if (!table) return;
 
-    const size_t index = key & mask;
-    Entry* entry = &table[index];
+    const size_t clusterIndex = key & mask;
+    Entry* cluster = table + clusterIndex * ClusterSize;
+    Entry* replacement = &cluster[0];
 
-    const bool sameKey = entry->key == key;
-    const bool empty = entry->key == 0;
-    const uint8_t ageDelta = static_cast<uint8_t>(currentAge - entry->age);
-    const bool older = ageDelta != 0;
-
-    // Prefer deeper entries, but let a new search replace stale shallow data.
-    // A move-bearing entry is kept on equal depth because it improves ordering.
-    if (sameKey)
+    for (size_t i = 0; i < ClusterSize; ++i)
     {
-        if (depth >= entry->depth || bestMove.from != Square::None)
+        Entry& candidate = cluster[i];
+        if (candidate.key == key)
         {
-            entry->depth = depth;
-            entry->score = score;
-            entry->type = type;
-            if (bestMove.from != Square::None)
-                entry->bestMove = bestMove;
-            entry->age = currentAge;
+            // A fresh move is useful for ordering even when the score was
+            // obtained at a shallower depth.
+            if (depth >= candidate.depth || bestMove.from != Square::None)
+            {
+                candidate.depth = depth;
+                candidate.score = score;
+                candidate.type = type;
+                if (bestMove.from != Square::None)
+                    candidate.bestMove = bestMove;
+                candidate.age = currentAge;
+            }
+            return;
         }
+
+        if (candidate.key == 0)
+        {
+            replacement = &candidate;
+            break;
+        }
+
+        const uint8_t ageDelta = static_cast<uint8_t>(currentAge - candidate.age);
+        const int candidateQuality = static_cast<int>(candidate.depth) -
+            static_cast<int>(ageDelta) * 4;
+        const int replacementQuality = static_cast<int>(replacement->depth) -
+            static_cast<int>(static_cast<uint8_t>(currentAge - replacement->age)) * 4;
+        if (candidateQuality < replacementQuality)
+            replacement = &candidate;
     }
-    else if (empty || older || depth >= entry->depth)
-    {
-        *entry = Entry{key, depth, score, type, bestMove, currentAge};
-    }
+
+    *replacement = Entry{key, depth, score, type, bestMove, currentAge};
 }
 
 size_t TranspositionTable::size()
 {
-    return tableSize * EntrySize;
+    return clusterCount * ClusterSize * EntrySize;
 }
 
 size_t TranspositionTable::entriesCount()
 {
-    return tableSize;
+    return clusterCount * ClusterSize;
 }

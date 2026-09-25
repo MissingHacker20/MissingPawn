@@ -114,6 +114,8 @@ static uint64_t nodeLimit;
 
     // Czas sprawdzamy w każdym węźle. Dzięki temu movetime i kontrola
     // czasu nie są przekraczane przez długi fragment drzewa.
-    static constexpr int TimeCheckInterval = 1;
+    // Clock reads are relatively expensive; stop requests and node limits are
+    // still checked on every call, while wall-clock time is sampled periodically.
+    static constexpr int TimeCheckInterval = 1024;
     static int timeCheckCounter;
 };

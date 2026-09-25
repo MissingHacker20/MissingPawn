@@ -253,12 +253,10 @@ bool Search::isPondering()
 
 bool Search::shouldStopSearch()
 {
-    if (!ponderEnabled && TimeManager::shouldStop())
-    {
-        return true;
-    }
-
-    return false;
+    // TimeManager ignores wall-clock limits while pondering, but it still
+    // observes an explicit stop request. Always call it so `stop` can end a
+    // ponder search before `ponderhit` arrives.
+    return TimeManager::shouldStop();
 }
 
 Move Search::findBestMove(Board& board, int depth)
@@ -905,11 +903,36 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         if (nullScore >= beta)
         {
+            // Null move can overestimate positions where passing is almost
+            // zugzwang-like.  At larger depths, verify the cutoff with a
+            // second reduced search after restoring the original position.
+            if (depth >= 8)
+            {
+                const int verificationDepth = std::max(1, depth - 1 - R - 1);
+                const int verificationScore = -negamax(
+                    board,
+                    verificationDepth,
+                    -beta,
+                    -beta + 1,
+                    ply + 1);
+                if (verificationScore < beta)
+                    return verificationScore;
+            }
             return beta;
         }
     }
 
     MoveOrdering::sortMoves(board, moves, depth, ply, ttMove, 0, 32);
+
+    // Safe frontier pruning: at depth one, a quiet move that cannot raise the
+    // static score above alpha is very unlikely to improve a non-PV node.
+    // Never apply it in check or to forcing moves (captures/promotions/castling).
+    const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+    const int staticScore = inCheck ? 0 :
+        (board.getSideToMove() == ChessColor::White
+            ? Evaluation::evaluate(board) : -Evaluation::evaluate(board));
+    const bool useFutility = !pvNode && !inCheck && depth == 1;
+    constexpr int FutilityMargin = 1200;
 
     Move bestMove;
     int bestScore = -Infinity;
@@ -928,6 +951,16 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
 
         const Move& move = moves[index];
+
+        if (useFutility && index > 0 && move.capturedPiece == Piece::None &&
+            move.flag != MoveFlag::KingCastle &&
+            move.flag != MoveFlag::QueenCastle &&
+            !(move.flag >= MoveFlag::PromotionKnight &&
+              move.flag <= MoveFlag::PromotionCaptureQueen) &&
+            staticScore + FutilityMargin <= alpha)
+        {
+            continue;
+        }
 
         // LMR: redukcja rośnie z głębokością i numerem ruchu, ale maleje dla
         // ruchów z dobrą historią. Ruchy forcing są wyłączone poniżej.
@@ -948,6 +981,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             reduction = 1;
             if (depth >= 6 && index >= 8) ++reduction;
             if (depth >= 10 && index >= 16) ++reduction;
+            if (depth <= 5 && index >= 12) ++reduction;
             if (historyScore < -200) ++reduction;
             if (historyScore > 300) --reduction;
             reduction = std::max(1, std::min(reduction, depth - 2));

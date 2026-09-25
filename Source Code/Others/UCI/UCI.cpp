@@ -702,8 +702,18 @@ void UCI::commandRegister(
 
 void UCI::commandPonderHit()
 {
+    // Leave ponder mode first, then restart the clock from the moment the
+    // opponent's expected move is confirmed.  The already configured wtime,
+    // btime, increments and movestogo remain intact in TimeManager.
     TimeManager::setPonder(false);
     Search::setPonder(false);
+    TimeManager::start();
+
+    if (TimeManager::hasTimeControl())
+    {
+        TimeManager::setTimeLimit(
+            TimeManager::calculateTimeLimit(board.getSideToMove()));
+    }
 
     std::cout << "info string PonderHit received." << std::endl;
 }
