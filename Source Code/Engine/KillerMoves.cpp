@@ -68,5 +68,10 @@ int KillerMoves::score(
         return 40000;
     }
 
+    if (killers[depth][2] == move)
+    {
+        return 30000;
+    }
+
     return 0;
 }

@@ -13,6 +13,7 @@
 #include "Move/AttackTables.h"
 #include "Move/MoveGenerator.h"
 #include "Move/MoveValidator.h"
+#include "Rate/Evaluation.h"
 
 #include <algorithm>
 #include <cctype>
@@ -236,6 +237,15 @@ bool UCI::executeCommand(
         return true;
     }
 
+    if (commandName == "evalpos")
+    {
+        const int score = Evaluation::evaluate(board);
+        const int sideScore = (board.getSideToMove() == ChessColor::White) ? score : -score;
+        std::cout << "info string Evaluation: " << score << " cp (White perspective)" << std::endl;
+        std::cout << "info string Side to move: " << sideScore << " cp" << std::endl;
+        return true;
+    }
+
     if (commandName == "go")
     {
         commandGo(tokens);
@@ -251,6 +261,12 @@ bool UCI::executeCommand(
     if (commandName == "stop")
     {
         commandStop();
+        return true;
+    }
+
+    if (commandName == "ttstats")
+    {
+        TranspositionTable::printStats();
         return true;
     }
 
@@ -320,7 +336,7 @@ bool UCI::executeCommand(
 
     if (commandName == "help")
     {
-        std::cout << "info string Supported commands: uci, isready, position, perft, go, saw, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
+        std::cout << "info string Supported commands: uci, isready, position, perft, evalpos, go, saw, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
         return true;
     }
 
@@ -352,7 +368,13 @@ void UCI::run()
     // samo join() mogłoby zablokować proces na zawsze.
     if (searchThread.joinable())
     {
-        TimeManager::stop();
+        // Only stop the search if it has actually done some work (nodes > 0).
+        // If nodes == 0, the search thread just started and hasn't entered
+        // the main loop yet; stopping it now would kill it before it runs.
+        if (TimeManager::getNodesSearched() > 0)
+        {
+            TimeManager::stop();
+        }
         searchThread.join();
     }
 }

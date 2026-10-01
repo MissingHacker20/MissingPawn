@@ -58,9 +58,10 @@ public:
 static ChessColor oppositeColor(ChessColor color);
 
 // Legacy functions - kept for compatibility but should not be used in new code
-static void filterLegalMoves(const Board& board, MoveList& moveList);
-static bool isMoveLegal(const Board& board, const Move& move);
-static bool isMoveLegalSlow(const Board& board, const Move& move);
+    static void filterLegalMoves(const Board& board, MoveList& moveList);
+    static bool isMoveLegal(const Board& board, const Move& move);
+    static bool isMoveLegal(const Board& board, const Move& move, const CheckInfo& checkInfo);
+    static bool isMoveLegalSlow(const Board& board, const Move& move);
 
 private:
 

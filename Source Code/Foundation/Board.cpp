@@ -1,5 +1,6 @@
 #include "Board.h"
 #include "Game/Zobrist.h"
+#include "Rate/Evaluation.h"
 
 
 Board::Board()
@@ -543,6 +544,25 @@ void Board::makeMove(
         break;
     }
 
+    // Captured rooks on their starting squares remove castling rights
+    if (undoInfo.capturedPiece != Piece::None)
+    {
+        if (undoInfo.capturedPiece == Piece::WhiteRook)
+        {
+            if (move.to == Square::A1)
+                castlingRights &= ~0b0010;
+            else if (move.to == Square::H1)
+                castlingRights &= ~0b0001;
+        }
+        else if (undoInfo.capturedPiece == Piece::BlackRook)
+        {
+            if (move.to == Square::A8)
+                castlingRights &= ~0b1000;
+            else if (move.to == Square::H8)
+                castlingRights &= ~0b0100;
+        }
+    }
+
     zobristKey ^= Zobrist::getCastlingKey(castlingRights);
 
     //--------------------------------------------------
@@ -592,6 +612,9 @@ void Board::makeMove(
     clearPieceAttacks(move.to);
     clearPieceMoves(move.from);
     clearPieceMoves(move.to);
+
+    // Update evaluation incrementally
+    updateEvalOnMove(move, undoInfo);
 }
 
 void Board::undoMove(
@@ -855,6 +878,9 @@ sideToMove = undoInfo.sideToMove;
     clearPieceMoves(move.to);
 
     zobristKey = undoInfo.zobristKey;
+
+    // Restore evaluation from undo info
+    updateEvalOnUndo(move, undoInfo);
 }
 
 void Board::makeNullMove(
@@ -866,6 +892,7 @@ void Board::makeNullMove(
     undoInfo.sideToMove = sideToMove;
     undoInfo.halfmoveClock = halfmoveClock;
     undoInfo.wasNullMove = true;
+    undoInfo.evalScore = evalScore;  // Save current eval
 
     // XOR out old EP if valid
     if (Zobrist::isEnPassantValid(*this, enPassantSquare))
@@ -891,6 +918,9 @@ void Board::makeNullMove(
     {
         zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
     }
+
+    // Null move just changes side to move, eval is negated
+    evalScore = -evalScore;
 }
 
 void Board::undoNullMove(
@@ -901,6 +931,7 @@ void Board::undoNullMove(
     enPassantSquare = undoInfo.enPassantSquare;
     sideToMove = undoInfo.sideToMove;
     halfmoveClock = undoInfo.halfmoveClock;
+    evalScore = undoInfo.evalScore;  // Restore eval
 }
 
 Piece Board::pieceAt(Square square) const
@@ -1039,4 +1070,22 @@ void Board::clearAllPieceBitboards()
 {
     attackBitboards.fill(0);
     moveBitboards.fill(0);
+}
+
+void Board::recomputeEval()
+{
+    evalScore = Evaluation::evaluate(*this);
+}
+
+void Board::updateEvalOnMove(const Move& move, UndoInfo& undoInfo)
+{
+    (void)move;
+    undoInfo.evalScore = evalScore;
+    evalScore = Evaluation::evaluate(*this);
+}
+
+void Board::updateEvalOnUndo(const Move& move, const UndoInfo& undoInfo)
+{
+    (void)move;
+    evalScore = undoInfo.evalScore;
 }

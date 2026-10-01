@@ -73,7 +73,6 @@ void TimeManager::setTimeLimit(int milliseconds)
 
 int TimeManager::calculateTimeLimit(ChessColor side)
 {
-    // Jeśli ustawiono moveTime, użyj go bezpośrednio
     if (moveTime >= 0)
     {
         return moveTime;
@@ -86,14 +85,11 @@ int TimeManager::calculateTimeLimit(ChessColor side)
 
     if (time <= 0)
     {
-        return 0; // brak kontroli czasu
+        return 0;
     }
 
-    // Bezpieczny przydział czasu na ruch:
-    // Rozdzielamy pozostały czas na ruchy do kontroli.
     int limit = time / movesToGoEst + inc;
 
-    // Używamy mniejszego ułamka pozostałego czasu jako sztywny limit
     int hardLimit = time / 40;
 
     if (limit < hardLimit)
@@ -103,10 +99,9 @@ int TimeManager::calculateTimeLimit(ChessColor side)
 
     if (limit < 10)
     {
-        limit = 10; // minimum 10ms
+        limit = 10;
     }
 
-    // Nie używaj więcej niż 1/4 pozostałego czasu na ruch
     if (limit > time / 4)
     {
         limit = time / 4;
@@ -132,17 +127,12 @@ bool TimeManager::shouldStop()
         return false;
     }
 
-    // Limit liczby węzłów (go nodes N) - sprawdzany zawsze (tani).
     if (nodeLimit > 0 && nodesSearched >= nodeLimit)
     {
         stopRequested.store(true, std::memory_order_relaxed);
         return true;
     }
 
-    // Sprawdzanie zegara jest kosztowne (steady_clock::now()).
-    // Wykonujemy je co TimeCheckInterval wywołań, aby uniknąć narzutu
-    // w każdym węźle wyszukiwania. Kontrola czasu jest na tyle mało
-    // wrażliwa (milisekundy), że kilka tysięcy węzłów nie ma znaczenia.
     if (++timeCheckCounter < TimeCheckInterval)
     {
         return false;
@@ -165,7 +155,6 @@ bool TimeManager::shouldStop()
         }
     }
 
-    // Sprawdź limit czasu na ruch (dla kontroli czasu wtime/btime)
     if (timeLimit > 0 && elapsed >= timeLimit)
     {
         stopRequested.store(true, std::memory_order_relaxed);
@@ -295,7 +284,6 @@ int TimeManager::getMateSearch()
 
 bool TimeManager::hasTimeControl()
 {
-    // Sprawdzamy czy ustawiono rzeczywisty czas (a nie tylko movetime)
     return remainingTime[0] > 0 || remainingTime[1] > 0 || moveTime >= 0 || nodeLimit > 0;
 }
 
@@ -303,21 +291,16 @@ int TimeManager::calculateDepthFromTime(
     Board& board,
     ChessColor side)
 {
-    //--------------------------------------------------
-    // Podstawowa głębokość z czasu
-    //--------------------------------------------------
-
     int baseDepth;
 
     if (moveTime >= 0)
     {
-        // Dla krótkiego czasu: mała głębokość, dla długiego: większa
-if (moveTime <= 100)   baseDepth = 3;
-            else if (moveTime <= 500)   baseDepth = 4;
-            else if (moveTime <= 1000)  baseDepth = 5;
-            else if (moveTime <= 3000)  baseDepth = 7;
-            else if (moveTime <= 10000) baseDepth = 8;
-            else baseDepth = 10;
+        if (moveTime <= 100)   baseDepth = 3;
+        else if (moveTime <= 500)   baseDepth = 4;
+        else if (moveTime <= 1000)  baseDepth = 5;
+        else if (moveTime <= 3000)  baseDepth = 7;
+        else if (moveTime <= 10000) baseDepth = 8;
+        else baseDepth = 10;
     }
     else
     {
@@ -328,12 +311,10 @@ if (moveTime <= 100)   baseDepth = 3;
 
         if (time <= 0)
         {
-            baseDepth = 6; // domyślna głębokość
+            baseDepth = 6;
         }
-else
+        else
         {
-            // Czas na ruch: (pozostały czas) / liczba ruchów do kontroli
-            // Dzielimy przez bezpieczny współczynnik, ale nie zbyt agresywnie
             const int timePerMove = (time + inc * movesToGoEst) / movesToGoEst;
 
             if (timePerMove <= 100)  baseDepth = 3;
@@ -347,68 +328,42 @@ else
         }
     }
 
-    //--------------------------------------------------
-    // Uwzględnij liczbę legalnych ruchów
-    //--------------------------------------------------
-
-    // Im więcej możliwych ruchów, tym szersze drzewo -> płytsza głębokość
     MoveList legalMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
-    // generateMoves() already returns legal moves.
     MoveGenerator::generateMoves(board, legalMoves, pseudoInfo);
 
     int moveCount = static_cast<int>(legalMoves.size());
     if (moveCount <= 5)
     {
-        // Mało możliwości -> można szukać głębiej
         baseDepth += 2;
     }
     else if (moveCount <= 15)
     {
-        // Normalna liczba ruchów
-        // bez zmian
     }
     else if (moveCount <= 30)
     {
-        // Dużo ruchów -> nieco płycej
         baseDepth -= 1;
     }
     else
     {
-        // Bardzo dużo ruchów → płycej
         baseDepth -= 1;
     }
 
-    //--------------------------------------------------
-    // Uwzględnij ocenę pozycji
-    //--------------------------------------------------
-
-    // Jeśli pozycja jest jednoznacznie dobra/zła, możemy szukać głębiej
-    // (silnik lepiej rozumie stabilne pozycje)
     const int eval = Evaluation::evaluate(board);
 
-    // Uwzględnij stronę: dodajemy bezwzględną wartość ewaluacji
     const int absEval = std::abs(eval);
 
     if (absEval > 5000)
     {
-        // Duża przewaga materialna -> pozycja prostsza, szukaj głębiej
         baseDepth += 1;
     }
     else if (absEval > 2000)
     {
-        // Umiarkowana przewaga -> bez zmian
-        // bez zmian
     }
     else if (absEval < 500)
     {
-        // Równowaga -> pozycja subtelna, nieco płycej (bezpieczniej)
         baseDepth -= 1;
     }
-
-    //--------------------------------------------------
-    // Ogranicz do bezpiecznego zakresu
-    //--------------------------------------------------
 
     if (baseDepth < 2)
     {

@@ -265,6 +265,9 @@ Move Search::findBestMove(Board& board, int depth)
 
     TimeManager::resetNodeCount();
 
+    // Initialize evaluation for this position
+    board.recomputeEval();
+
     // Initialize Transposition Table (only once per search session)
     static bool ttInitialized = false;
     if (!ttInitialized)
@@ -391,9 +394,9 @@ Move Search::findBestMove(Board& board, int depth)
         int alpha = -Infinity;
         int beta = Infinity;
 
-        for (int index = 0; index < moves.size(); ++index)
+for (int index = 0; index < moves.size(); ++index)
         {
-if (shouldStopSearch())
+            if (shouldStopSearch())
             {
                 break;
             }
@@ -534,6 +537,9 @@ if (shouldStopSearch())
     }
     std::cout.flush();
 
+    // Print TT stats at end of search
+    TranspositionTable::printStats();
+
     return bestMove;
 }
 
@@ -637,11 +643,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
     else
     {
-        standPat = Evaluation::evaluate(board);
-        if (board.getSideToMove() == ChessColor::Black)
-        {
-            standPat = -standPat;
-        }
+        standPat = board.getSideToMove() == ChessColor::White ? board.getEvalScore() : -board.getEvalScore();
 
         if (standPat >= beta)
         {
@@ -773,7 +775,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // MaxPly safety check
     if (ply >= MaxPly - 1)
     {
-        const int score = Evaluation::evaluate(board);
+        const int score = board.getEvalScore();
         return board.getSideToMove() == ChessColor::White ? score : -score;
     }
 
@@ -928,9 +930,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // static score above alpha is very unlikely to improve a non-PV node.
     // Never apply it in check or to forcing moves (captures/promotions/castling).
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
-    const int staticScore = inCheck ? 0 :
-        (board.getSideToMove() == ChessColor::White
-            ? Evaluation::evaluate(board) : -Evaluation::evaluate(board));
+    const int staticScore = inCheck ? 0 : 
+        (board.getSideToMove() == ChessColor::White ? board.getEvalScore() : -board.getEvalScore());
     const bool useFutility = !pvNode && !inCheck && depth == 1;
     constexpr int FutilityMargin = 1200;
 

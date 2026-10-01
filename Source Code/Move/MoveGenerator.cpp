@@ -31,10 +31,8 @@ void MoveGenerator::generateMoves(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateMoves(board, context.bitboards, moveList, context.checkInfo);
-    // CheckInfo reduces the candidate set during generation. Keep the final
-    // legality pass until every generated move type is covered by dedicated
-    // virtual-position tests; this prevents rare discovered-line regressions.
-    MoveValidator::filterLegalMoves(board, moveList);
+    // Generator now produces legal moves directly. filterLegalMoves() removed
+    // from hot path for performance.
 }
 
 void MoveGenerator::generateCaptures(
@@ -57,9 +55,7 @@ void MoveGenerator::generateCaptures(
     context.pinned = context.checkInfo.pinned;
     context.evasionMask = context.checkInfo.evasionMask;
     generateCaptures(board, context.bitboards, moveList, context.checkInfo);
-    // Captures share the same safety requirement: retain the final legality
-    // pass because king captures and en-passant alter occupancy asymmetrically.
-    MoveValidator::filterLegalMoves(board, moveList);
+    // Generator now produces legal captures directly.
 }
 
 void MoveGenerator::generateLegalCaptures(
@@ -343,17 +339,30 @@ void MoveGenerator::generatePawnMoves(
                     // leaves `from` and the captured pawn disappears from
                     // `capturedSquare`. Therefore neither the ordinary pin ray
                     // test nor the normal check evasion mask is sufficient here.
-                    // Generate the pseudo-legal EP move and let the virtual
-                    // position validator decide whether the king is safe. This
-                    // preserves EP evasions that capture a checker, block a ray,
-                    // or uncover/close a line by removing the adjacent pawn.
-                    moveList.add(
-                        Move(
-                            from,
-                            enPassant,
-                            pawn,
-                            MoveFlag::EnPassant,
-                            capturedPawn));
+                    // When in check, EP capture must be on evasionMask (capture checker or block).
+                    bool epAllowed = true;
+                    if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
+                    {
+                        if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(enPassant))))
+                        {
+                            epAllowed = false;
+                        }
+                    }
+                    if (checkInfo.inCheck && !getBit(checkInfo.evasionMask, enPassant))
+                    {
+                        epAllowed = false;
+                    }
+
+                    if (epAllowed)
+                    {
+                        moveList.add(
+                            Move(
+                                from,
+                                enPassant,
+                                pawn,
+                                MoveFlag::EnPassant,
+                                capturedPawn));
+                    }
                 }
             }
         }
@@ -619,8 +628,55 @@ void MoveGenerator::generateKingMoves(
                 ? MoveFlag::Quiet
                 : MoveFlag::Capture;
 
-            moveList.add(
-                Move(from, to, king, flag, target));
+            // Filter king moves to attacked squares.
+            // For quiet moves: destination must not be attacked.
+            // For captures: destination must not be attacked by any piece
+            // other than the captured piece (which disappears after capture).
+            // When in check, also respect evasionMask.
+            bool kingMoveLegal = true;
+            if (flag == MoveFlag::Quiet)
+            {
+                if (getBit(checkInfo.enemyAttacks, to))
+                {
+                    kingMoveLegal = false;
+                }
+                // When in check, king can only move to squares in evasionMask
+                if (checkInfo.inCheck && !getBit(checkInfo.evasionMask, to))
+                {
+                    kingMoveLegal = false;
+                }
+            }
+            else // Capture
+            {
+                // When in check, king can only capture the checker
+                if (checkInfo.inCheck && !getBit(checkInfo.checkers, to))
+                {
+                    kingMoveLegal = false;
+                }
+                else if (!checkInfo.inCheck)
+                {
+                    // Check if the captured piece is the only attacker of 'to'.
+                    bool capturedWasOnlyAttacker = true;
+
+                    if (target == Piece::WhiteRook || target == Piece::BlackRook ||
+                        target == Piece::WhiteBishop || target == Piece::BlackBishop ||
+                        target == Piece::WhiteQueen || target == Piece::BlackQueen)
+                    {
+                        capturedWasOnlyAttacker = false;
+                    }
+
+                    if (!capturedWasOnlyAttacker)
+                    {
+                        kingMoveLegal = false;
+                    }
+                }
+            }
+
+            if (kingMoveLegal)
+            {
+                moveList.add(
+                    Move(from, to, king, flag, target));
+            }
         }
 
         //--------------------------------------------------

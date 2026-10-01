@@ -74,10 +74,17 @@ public:
 
     void clearAllPieceBitboards();
 
+    // Evaluation
+    int getEvalScore() const { return evalScore; }
+    void setEvalScore(int score) { evalScore = score; }
+    void recomputeEval();
+
 private:
 
     void setPieceInternal(Piece piece, Square square);
     void removePieceInternal(Piece piece, Square square);
+    void updateEvalOnMove(const Move& move, UndoInfo& undoInfo);
+    void updateEvalOnUndo(const Move& move, const UndoInfo& undoInfo);
 
     uint64_t zobristKey = 0;
 
@@ -101,4 +108,6 @@ private:
 
     std::array<Bitboard, 64> attackBitboards;
     std::array<Bitboard, 64> moveBitboards;
+
+    int evalScore = 0;
 };

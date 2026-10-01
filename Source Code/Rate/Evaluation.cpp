@@ -118,23 +118,8 @@ namespace
 {
 int cachedPawnEvaluation(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    static std::unordered_map<uint64_t, int> cache;
-    const int idx = Bitboards::indexOf(color);
-    // Klucz obejmuje cały kontekst używany przez ocenę pionów: oba
-    // bitboardy pionów, zajętość obu stron i pełną zajętość pozycji.
-    // Dzięki temu cache nie zwraca wyniku dla innego układu figur.
-    uint64_t key = bitboards.pawns[idx] ^
-        (bitboards.pawns[1 - idx] * 0x9E3779B97F4A7C15ULL);
-    key ^= bitboards.occupied[idx] * 0xD6E8FEB86659FD93ULL;
-    key ^= bitboards.occupied[1 - idx] * 0xBF58476D1CE4E5B9ULL;
-    key ^= bitboards.allOccupied * 0xA24BAED4963EE407ULL;
-    key ^= static_cast<uint64_t>(idx) * 0x94D049BB133111EBULL;
-    const auto found = cache.find(key);
-    if (found != cache.end()) return found->second;
-    const int value = PawnEvaluation::evaluate(board, bitboards, color);
-    if (cache.size() > 32768) cache.clear();
-    cache.emplace(key, value);
-    return value;
+    // Disable cache for debugging
+    return PawnEvaluation::evaluate(board, bitboards, color);
 }
 
 int evaluateColor(const Board& board, const Bitboards& bitboards, ChessColor color)

@@ -110,10 +110,13 @@ void MoveValidator::filterLegalMoves(
     int writeIndex = 0;
     const int moveCount = moveList.size();
 
+    // Compute CheckInfo once for all moves
+    CheckInfo checkInfo = computeCheckInfo(board, board.getSideToMove());
+
     for (int readIndex = 0; readIndex < moveCount; ++readIndex)
     {
         const Move move = moveList[readIndex];
-        if (isMoveLegal(board, move))
+        if (isMoveLegal(board, move, checkInfo))
         {
             moveList[writeIndex++] = move;
         }
@@ -250,6 +253,15 @@ bool MoveValidator::isMoveLegal(
     const Board& board,
     const Move& move)
 {
+    // Default implementation without CheckInfo - falls back to slow path for safety
+    return isMoveLegalSlow(board, move);
+}
+
+bool MoveValidator::isMoveLegal(
+    const Board& board,
+    const Move& move,
+    const CheckInfo& checkInfo)
+{
     // Fast path: simple quiet moves and captures by non-king, non-pinned pieces
     // that don't involve special flags.
     const ChessColor side = board.getSideToMove();
@@ -306,6 +318,18 @@ bool MoveValidator::isMoveLegal(
     {
         // Moving piece is not on any ray from king - cannot expose check
         return true;
+    }
+
+    // If the piece is pinned and the move is along the pin ray, it continues to block
+    // the enemy slider, so no discovered check is possible.
+    if (checkInfo.pinned & (1ULL << fromIdx))
+    {
+        const int toIdx = static_cast<int>(move.to);
+        if (checkInfo.pinRays[fromIdx] & (1ULL << toIdx))
+        {
+            // Move is along the pin ray - piece continues to block the slider
+            return true;
+        }
     }
 
     // Piece is aligned with king - need to check if it was blocking an enemy slider
