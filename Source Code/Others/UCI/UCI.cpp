@@ -1,3 +1,13 @@
+/*
+ * MissingPawn
+ * Copyright (C) 2026 Kacper Wieczorek
+ *
+ * This file is part of MissingPawn.
+ *
+ * Licensed under the GNU General Public License v3 or later.
+ * See LICENSE for details.
+ */
+
 #include "Others/UCI/UCI.h"
 #include "Others/TimeManager.h"
 #include "Others/UCI/UCIOptions.h"

@@ -1,4 +1,14 @@
-#include "Others/UCI/UCIParser.h"
+/*
+ * MissingPawn
+ * Copyright (C) 2026 Kacper Wieczorek
+ *
+ * This file is part of MissingPawn.
+ *
+ * Licensed under the GNU General Public License v3 or later.
+ * See LICENSE for details.
+ */
+
+ #include "Others/UCI/UCIParser.h"
 
 GoParameters UCIParser::parseGo(
     const std::vector<std::string>& tokens)

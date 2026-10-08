@@ -1,3 +1,13 @@
+/*
+ * MissingPawn
+ * Copyright (C) 2026 Kacper Wieczorek
+ *
+ * This file is part of MissingPawn.
+ *
+ * Licensed under the GNU General Public License v3 or later.
+ * See LICENSE for details.
+ */
+
 #include "Rate/PawnStructure.h"
 
 #include <algorithm>
@@ -19,6 +29,9 @@ inline Piece pawnFor(ChessColor color)
 
 int PawnStructureEvaluation::PieceBlocker(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
+/*
+ * This is part of MissingPawn.
+ */
     const int ownIdx = Bitboards::indexOf(color);
     const int enemyIdx = 1 - ownIdx;
 
@@ -46,6 +59,9 @@ int PawnStructureEvaluation::PieceBlocker(const Board& board, const Bitboards& b
 
 int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
+/*
+ * This is part of MissingPawn.
+ */
     const int ownIdx = Bitboards::indexOf(color);
     const int enemyIdx = 1 - ownIdx;
 
@@ -77,6 +93,9 @@ int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitbo
 
 int PawnStructureEvaluation::PieceSpace(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
+/*
+ * This is part of MissingPawn.
+ */
     const int ownIdx = Bitboards::indexOf(color);
     const int enemyIdx = 1 - ownIdx;
     const Bitboard ownAttacks = bitboards.pawnAttacks[ownIdx]

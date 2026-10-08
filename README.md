@@ -45,7 +45,7 @@ The Elo rating is stored in Releases.
 
 ## License
 
-This project is released under the MIT License.
+This project is released under the GNU General Public License v3 License.
 
 ## Author
 

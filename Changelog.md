@@ -40,3 +40,4 @@
 - search update
 - pawn evaluation update
 - If-Else Maks System
+- new license (GPL v3)
