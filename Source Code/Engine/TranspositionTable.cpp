@@ -29,10 +29,6 @@ size_t TranspositionTable::clusterCount = 0;
 size_t TranspositionTable::mask = 0;
 uint8_t TranspositionTable::currentAge = 0;
 
-uint64_t TranspositionTable::probes = 0;
-uint64_t TranspositionTable::hits = 0;
-uint64_t TranspositionTable::stores = 0;
-
 void TranspositionTable::initialize(size_t sizeMB)
 {
     if (table)
@@ -100,8 +96,6 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
 {
     if (!table) return nullptr;
 
-    probes++;
-
     const size_t clusterIndex = key & mask;
     Entry* cluster = table + clusterIndex * ClusterSize;
 
@@ -109,7 +103,6 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
     {
         if (cluster[i].key == key)
         {
-            hits++;
             return &cluster[i];
         }
     }
@@ -120,8 +113,6 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
 void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type, const Move& bestMove)
 {
     if (!table) return;
-
-    stores++;
 
     const size_t clusterIndex = key & mask;
     Entry* cluster = table + clusterIndex * ClusterSize;
@@ -172,20 +163,4 @@ size_t TranspositionTable::size()
 size_t TranspositionTable::entriesCount()
 {
     return clusterCount * ClusterSize;
-}
-
-void TranspositionTable::resetStats()
-{
-    probes = 0;
-    hits = 0;
-    stores = 0;
-}
-
-void TranspositionTable::printStats()
-{
-    std::cout << "info string TT Stats: probes=" << probes
-              << " hits=" << hits
-              << " stores=" << stores
-              << " hit_rate=" << (probes > 0 ? (100.0 * hits / probes) : 0.0) << "%"
-              << std::endl;
 }

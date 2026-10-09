@@ -547,9 +547,6 @@ for (int index = 0; index < moves.size(); ++index)
     }
     std::cout.flush();
 
-    // Print TT stats at end of search
-    TranspositionTable::printStats();
-
     return bestMove;
 }
 
@@ -940,7 +937,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // static score above alpha is very unlikely to improve a non-PV node.
     // Never apply it in check or to forcing moves (captures/promotions/castling).
     const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
-    const int staticScore = inCheck ? 0 : 
+    const int staticScore = inCheck ? 0 :
         (board.getSideToMove() == ChessColor::White ? board.getEvalScore() : -board.getEvalScore());
     const bool useFutility = !pvNode && !inCheck && depth == 1;
     constexpr int FutilityMargin = 1200;

@@ -274,12 +274,6 @@ bool UCI::executeCommand(
         return true;
     }
 
-    if (commandName == "ttstats")
-    {
-        TranspositionTable::printStats();
-        return true;
-    }
-
     if (commandName == "ucinewgame")
     {
         commandUCINewGame();

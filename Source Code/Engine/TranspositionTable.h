@@ -45,13 +45,6 @@ public:
     static size_t size();
     static size_t entriesCount();
 
-    // Stats
-    static uint64_t probes;
-    static uint64_t hits;
-    static uint64_t stores;
-    static void resetStats();
-    static void printStats();
-
 private:
     static constexpr size_t ClusterSize = 4;
 
