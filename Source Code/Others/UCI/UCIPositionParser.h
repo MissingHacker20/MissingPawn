@@ -19,7 +19,8 @@ class UCIPositionParser
 {
 public:
 
-    static void parse(
+    static bool parse(
         Board& board,
-        const std::vector<std::string>& tokens);
+        const std::vector<std::string>& tokens,
+        std::string& errorMessage);
 };

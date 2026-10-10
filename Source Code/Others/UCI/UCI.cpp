@@ -131,6 +131,12 @@ uint64_t perft(Board& board, int depth)
 
 void perftDivide(Board& board, int depth)
 {
+    if (depth == 0)
+    {
+        std::cout << "info string divide total 1" << std::endl;
+        return;
+    }
+
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
     uint64_t total = 0;
@@ -195,36 +201,31 @@ bool UCI::executeCommand(
 
     if (commandName == "position")
     {
-        if (tokens.size() < 2)
-        {
-            std::cout << "info string Missing position arguments." << std::endl;
-        }
-        else
-        {
-            UCIPositionParser::parse(
-                board,
-                tokens);
+        std::string errorMessage;
+        if (UCIPositionParser::parse(board, tokens, errorMessage))
             std::cout << "info string Position updated." << std::endl;
-        }
+        else
+            std::cout << "info string position error: " << errorMessage << std::endl;
         return true;
     }
 
     if (commandName == "perft")
     {
-        if (tokens.size() < 2 || tokens.size() > 3)
+        if (tokens.size() < 2 || tokens.size() > 3 || (tokens.size() == 3 && tokens[2] != "divide"))
         {
-            std::cout << "info string Usage: perft <depth> [divide]" << std::endl;
+            std::cout << "info string Usage: perft <depth 0..8> [divide]" << std::endl;
         }
         else
         {
             try
             {
-                const int depth = std::stoi(tokens[1]);
-                if (depth < 0 || depth > 8)
+                size_t parsed = 0;
+                const int depth = std::stoi(tokens[1], &parsed);
+                if (parsed != tokens[1].size() || depth < 0 || depth > 8)
                     throw std::out_of_range("depth");
                 Board testBoard = board;
                 const auto start = std::chrono::steady_clock::now();
-                if (tokens.size() == 3 && tokens[2] == "divide")
+                if (tokens.size() == 3)
                 {
                     perftDivide(testBoard, depth);
                     return true;
@@ -241,18 +242,30 @@ bool UCI::executeCommand(
             }
             catch (const std::exception&)
             {
-                std::cout << "info string Invalid perft depth." << std::endl;
+                std::cout << "info string Invalid perft depth; expected an integer from 0 to 8." << std::endl;
             }
         }
         return true;
     }
 
-    if (commandName == "evalpos")
+    if (commandName == "eval" || commandName == "evalpos")
     {
-        const int score = Evaluation::evaluate(board);
-        const int sideScore = (board.getSideToMove() == ChessColor::White) ? score : -score;
-        std::cout << "info string Evaluation: " << score << " cp (White perspective)" << std::endl;
-        std::cout << "info string Side to move: " << sideScore << " cp" << std::endl;
+        if (tokens.size() != 1)
+        {
+            std::cout << "info string eval error: this command takes no arguments." << std::endl;
+            return true;
+        }
+        const int whiteScore = Evaluation::evaluate(board);
+        const int sideScore = board.getSideToMove() == ChessColor::White ? whiteScore : -whiteScore;
+        const auto printSigned = [](int value) {
+            if (value > 0) std::cout << '+';
+            std::cout << value;
+        };
+        std::cout << "info string eval (white, mP): ";
+        printSigned(whiteScore);
+        std::cout << std::endl << "info string eval (side to move, mP): ";
+        printSigned(sideScore);
+        std::cout << std::endl;
         return true;
     }
 
@@ -264,6 +277,11 @@ bool UCI::executeCommand(
 
     if (commandName == "saw")
     {
+        if (tokens.size() != 1)
+        {
+            std::cout << "info string saw error: this command takes no arguments." << std::endl;
+            return true;
+        }
         commandSaw();
         return true;
     }
@@ -288,17 +306,16 @@ bool UCI::executeCommand(
         }
         else
         {
-            UCIOptionParser::parse(tokens);
+            std::string errorMessage;
+            if (!UCIOptionParser::parse(tokens, errorMessage))
+            {
+                std::cout << "info string setoption error: " << errorMessage << std::endl;
+                return true;
+            }
             if (std::find(tokens.begin(), tokens.end(), "BookMoves") != tokens.end())
-            {
                 g_openingBookEnabled = UCIOptions::getBoolOption("BookMoves");
-            }
             if (std::find(tokens.begin(), tokens.end(), "Hash") != tokens.end())
-            {
-                int hashMB = UCIOptions::getIntOption("Hash");
-                hashMB = std::max(1, std::min(hashMB, 4096));
-                Search::initTranspositionTable(static_cast<size_t>(hashMB));
-            }
+                Search::initTranspositionTable(static_cast<size_t>(UCIOptions::getIntOption("Hash")));
             std::cout << "info string Option processed." << std::endl;
         }
         return true;
@@ -340,7 +357,7 @@ bool UCI::executeCommand(
 
     if (commandName == "help")
     {
-        std::cout << "info string Supported commands: uci, isready, position, perft, evalpos, go, saw, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
+        std::cout << "info string Supported commands: uci, isready, position, perft, eval, evalpos, go, saw, stop, ucinewgame, setoption, debug, book, ponderhit, register, quit" << std::endl;
         return true;
     }
 
@@ -412,8 +429,13 @@ void UCI::commandQuit()
 void UCI::commandGo(
     const std::vector<std::string>& tokens)
 {
-    GoParameters params =
-    UCIParser::parseGo(tokens);
+    std::string parseError;
+    GoParameters params = UCIParser::parseGo(tokens, parseError);
+    if (!parseError.empty())
+    {
+        std::cout << "info string go error: " << parseError << std::endl;
+        return;
+    }
 
     //--------------------------------------------------
     // Sprawdź książkę otwarć
@@ -575,6 +597,13 @@ void UCI::commandSaw()
 {
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
+    if (moves.size() == 0)
+    {
+        const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+        std::cout << "info string saw: no legal moves ("
+                  << (inCheck ? "checkmate" : "stalemate") << ")." << std::endl;
+        return;
+    }
 
     for (int i = 0; i < moves.size(); ++i)
     {
@@ -655,11 +684,9 @@ void UCI::commandUCINewGame()
 void UCI::commandDebug(
     const std::vector<std::string>& tokens)
 {
-    if (tokens.size() < 2)
+    if (tokens.size() != 2)
     {
-        std::cout << "info string Debug mode is "
-                  << (debugMode ? "ON" : "OFF")
-                  << std::endl;
+        std::cout << "info string debug error: use debug on|off." << std::endl;
         return;
     }
 
@@ -677,7 +704,8 @@ void UCI::commandDebug(
     }
     else
     {
-        debugMode = !debugMode;
+        std::cout << "info string debug error: expected on|off, got '" << tokens[1] << "'." << std::endl;
+        return;
     }
 
     std::cout << "info string Debug mode is "
@@ -690,7 +718,7 @@ void UCI::commandBook(
 {
     if (tokens.size() != 2)
     {
-        std::cout << "info string Usage: book on|off" << std::endl;
+        std::cout << "info string book error: usage is book on|off." << std::endl;
         return;
     }
 
@@ -712,7 +740,7 @@ void UCI::commandBook(
         return;
     }
 
-    std::cout << "info string Usage: book on|off" << std::endl;
+    std::cout << "info string book error: expected on|off, got '" << tokens[1] << "'." << std::endl;
 }
 
 bool UCI::isDebugMode()

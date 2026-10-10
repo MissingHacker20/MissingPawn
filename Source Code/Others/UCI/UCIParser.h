@@ -44,5 +44,6 @@ class UCIParser
 public:
 
     static GoParameters parseGo(
-        const std::vector<std::string>& tokens);
+        const std::vector<std::string>& tokens,
+        std::string& errorMessage);
 };

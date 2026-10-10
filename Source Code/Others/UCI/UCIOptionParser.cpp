@@ -13,11 +13,16 @@
 #include "Others/UCI/UCIOptions.h"
 #include "Engine/Search.h"
 
-#include <iostream>
-
-void UCIOptionParser::parse(
-    const std::vector<std::string>& tokens)
+bool UCIOptionParser::parse(
+    const std::vector<std::string>& tokens,
+    std::string& errorMessage)
 {
+    errorMessage.clear();
+    if (tokens.size() < 2 || tokens[1] != "name")
+    {
+        errorMessage = "Expected 'setoption name <name> value <value>'.";
+        return false;
+    }
     std::string name;
     std::string value;
 
@@ -61,18 +66,22 @@ void UCIOptionParser::parse(
         }
     }
 
-    if (!UCIOptions::setOption(name, value))
+    if (name.empty())
     {
-        return;
+        errorMessage = "Option name is empty.";
+        return false;
+    }
+    if (!readValue)
+    {
+        errorMessage = "Missing 'value' field for option '" + name + "'.";
+        return false;
     }
 
-    //--------------------------------------------------
-    // Engine reaction
-    //--------------------------------------------------
+    if (!UCIOptions::setOption(name, value, errorMessage))
+        return false;
 
-    else if (name == "Ponder")
-    {
-        Search::setPonder(
-            UCIOptions::getBoolOption("Ponder"));
-    }
+    if (name == "Ponder")
+        Search::setPonder(UCIOptions::getBoolOption("Ponder"));
+
+    return true;
 }

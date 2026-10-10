@@ -12,6 +12,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <charconv>
 
 std::vector<UCIOption> UCIOptions::options;
 
@@ -48,17 +49,41 @@ void UCIOptions::initialize()
 
 bool UCIOptions::setOption(
     const std::string& name,
-    const std::string& value)
+    const std::string& value,
+    std::string& errorMessage)
 {
     for (auto& option : options)
     {
-        if (option.name == name)
+        if (option.name != name)
+            continue;
+
+        if (option.type == UCIOptionType::Check)
         {
-            option.currentValue = value;
-            return true;
+            if (value != "true" && value != "false")
+            {
+                errorMessage = "Option '" + name + "' expects true or false.";
+                return false;
+            }
         }
+        else if (option.type == UCIOptionType::Spin)
+        {
+            int parsed = 0;
+            const char* begin = value.data();
+            const char* end = begin + value.size();
+            const auto [ptr, ec] = std::from_chars(begin, end, parsed);
+            if (ec != std::errc{} || ptr != end || parsed < option.min || parsed > option.max)
+            {
+                errorMessage = "Option '" + name + "' must be an integer from " +
+                    std::to_string(option.min) + " to " + std::to_string(option.max) + ".";
+                return false;
+            }
+        }
+
+        option.currentValue = value;
+        return true;
     }
 
+    errorMessage = "Unknown option: " + name;
     return false;
 }
 

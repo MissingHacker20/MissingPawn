@@ -25,7 +25,8 @@ public:
 
     static bool setOption(
         const std::string& name,
-        const std::string& value);
+        const std::string& value,
+        std::string& errorMessage);
 
     static const std::vector<UCIOption>& getOptions();
 

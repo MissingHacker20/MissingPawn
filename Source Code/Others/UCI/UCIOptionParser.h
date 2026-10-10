@@ -17,6 +17,7 @@ class UCIOptionParser
 {
 public:
 
-    static void parse(
-        const std::vector<std::string>& tokens);
+    static bool parse(
+        const std::vector<std::string>& tokens,
+        std::string& errorMessage);
 };
