@@ -19,26 +19,32 @@
 namespace AttackTables
 {
 
+void initAttackTables();
+
 inline Bitboard whitePawnAttacks(Square square)
 {
+    initAttackTables();
     extern std::array<Bitboard, 64> whitePawnAttackTable;
     return whitePawnAttackTable[static_cast<int>(square)];
 }
 
 inline Bitboard blackPawnAttacks(Square square)
 {
+    initAttackTables();
     extern std::array<Bitboard, 64> blackPawnAttackTable;
     return blackPawnAttackTable[static_cast<int>(square)];
 }
 
 inline Bitboard knightAttacks(Square square)
 {
+    initAttackTables();
     extern std::array<Bitboard, 64> knightAttackTable;
     return knightAttackTable[static_cast<int>(square)];
 }
 
 inline Bitboard kingAttacks(Square square)
 {
+    initAttackTables();
     extern std::array<Bitboard, 64> kingAttackTable;
     return kingAttackTable[static_cast<int>(square)];
 }
@@ -70,8 +76,6 @@ inline Bitboard pieceAttacks(Piece piece, Square square, Bitboard occupancy)
     default:                 return 0;
     }
 }
-
-void initAttackTables();
 
 // Verifies the generated sliding-piece attack tables against the brute-force
 // reference for every square and relevant occupancy. Returns true if correct.

@@ -1,19 +1,28 @@
 /*
- * MissingPawn
- * Copyright (C) 2026 Kacper Wieczorek
- *
- * This file is part of MissingPawn.
- *
- * Licensed under the GNU General Public License v3 or later.
- * See LICENSE for details.
- */
+  This file contains code derived from Stockfish.
+
+  Copyright (C) 2004-2026 The Stockfish developers
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published
+  by the Free Software Foundation, either version 3 of the License,
+  or (at your option) any later version.
+
+  This file has been modified and adapted for the MissingPawn chess
+  engine.
+
+  Modifications:
+  Copyright (C) 2026 Kacper Wieczorek
+*/
 
 #include "Move/AttackTables.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <bit>
 #include <iostream>
+#include <mutex>
 #include <vector>
 
 #if defined(_MSC_VER)
@@ -36,7 +45,8 @@ std::array<Bitboard, 64> rookMasks{};
 // fastest possible sliding-piece attack indexing. Otherwise we fall back to
 // a portable bit-unpacking scheme that is correct on every architecture.
 bool usePext = false;
-bool initialized = false;
+std::atomic<bool> initialized{false};
+std::once_flag initializationFlag;
 
 // Attack tables indexed by the (PEXT- or packBits-) compressed occupancy.
 // Each square owns a contiguous slice of the buffer sized 1 << popcount(mask).
@@ -59,9 +69,12 @@ void computeMasks()
             int nr = r + bishopDirs[d][1];
             while (nf >= 0 && nf < 8 && nr >= 0 && nr < 8)
             {
-                bmask |= (1ULL << (nr * 8 + nf));
-                nf += bishopDirs[d][0];
-                nr += bishopDirs[d][1];
+                const int nextFile = nf + bishopDirs[d][0];
+                const int nextRank = nr + bishopDirs[d][1];
+                if (nextFile >= 0 && nextFile < 8 && nextRank >= 0 && nextRank < 8)
+                    bmask |= (1ULL << (nr * 8 + nf));
+                nf = nextFile;
+                nr = nextRank;
             }
         }
         bishopMasks[sq] = bmask;
@@ -73,9 +86,12 @@ void computeMasks()
             int nr = r + rookDirs[d][1];
             while (nf >= 0 && nf < 8 && nr >= 0 && nr < 8)
             {
-                rmask |= (1ULL << (nr * 8 + nf));
-                nf += rookDirs[d][0];
-                nr += rookDirs[d][1];
+                const int nextFile = nf + rookDirs[d][0];
+                const int nextRank = nr + rookDirs[d][1];
+                if (nextFile >= 0 && nextFile < 8 && nextRank >= 0 && nextRank < 8)
+                    rmask |= (1ULL << (nr * 8 + nf));
+                nf = nextFile;
+                nr = nextRank;
             }
         }
         rookMasks[sq] = rmask;
@@ -331,22 +347,25 @@ std::array<Bitboard, 64> kingAttackTable{};
 
 void initAttackTables()
 {
-    if (initialized) return;
-    initialized = true;
+    if (initialized.load(std::memory_order_acquire))
+        return;
 
-    usePext = detectPextSupport();
+    std::call_once(initializationFlag, [] {
+        usePext = detectPextSupport();
 
-    computeMasks();
-    fillSlidingTables();
+        computeMasks();
+        fillSlidingTables();
 
-    generatePawnTable(whitePawnAttackTable, blackPawnAttackTable);
-    generateKnightTable(knightAttackTable);
-    generateKingTable(kingAttackTable);
+        generatePawnTable(whitePawnAttackTable, blackPawnAttackTable);
+        generateKnightTable(knightAttackTable);
+        generateKingTable(kingAttackTable);
+        initialized.store(true, std::memory_order_release);
+    });
 }
 
 Bitboard bishopAttacks(Square square, Bitboard occupancy)
 {
-    if (!initialized) initAttackTables();
+    initAttackTables();
     int s = static_cast<int>(square);
     Bitboard masked = occupancy & bishopMasks[s];
     uint64_t index = slidingIndex(masked, bishopMasks[s]);
@@ -355,7 +374,7 @@ Bitboard bishopAttacks(Square square, Bitboard occupancy)
 
 Bitboard rookAttacks(Square square, Bitboard occupancy)
 {
-    if (!initialized) initAttackTables();
+    initAttackTables();
     int s = static_cast<int>(square);
     Bitboard masked = occupancy & rookMasks[s];
     uint64_t index = slidingIndex(masked, rookMasks[s]);
@@ -369,6 +388,7 @@ Bitboard queenAttacks(Square square, Bitboard occupancy)
 
 bool verifyAttackTables()
 {
+    initAttackTables();
     for (int sq = 0; sq < 64; ++sq)
     {
         auto occs = enumerateOccupancies(bishopMasks[sq]);

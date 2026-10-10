@@ -1,12 +1,19 @@
 /*
- * MissingPawn
- * Copyright (C) 2026 Kacper Wieczorek
- *
- * This file is part of MissingPawn.
- *
- * Licensed under the GNU General Public License v3 or later.
- * See LICENSE for details.
- */
+  This file contains code derived from Stockfish.
+
+  Copyright (C) 2004-2026 The Stockfish developers
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published
+  by the Free Software Foundation, either version 3 of the License,
+  or (at your option) any later version.
+
+  This file has been modified and adapted for the MissingPawn chess
+  engine.
+
+  Modifications:
+  Copyright (C) 2026 Kacper Wieczorek
+*/
 
  #include "MoveValidator.h"
 #include "Board.h"
@@ -120,13 +127,10 @@ void MoveValidator::filterLegalMoves(
     int writeIndex = 0;
     const int moveCount = moveList.size();
 
-    // Compute CheckInfo once for all moves
-    CheckInfo checkInfo = computeCheckInfo(board, board.getSideToMove());
-
     for (int readIndex = 0; readIndex < moveCount; ++readIndex)
     {
         const Move move = moveList[readIndex];
-        if (isMoveLegal(board, move, checkInfo))
+        if (isMoveLegalSlow(board, move))
         {
             moveList[writeIndex++] = move;
         }

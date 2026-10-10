@@ -1,882 +1,264 @@
 /*
- * MissingPawn
- * Copyright (C) 2026 Kacper Wieczorek
- *
- * This file is part of MissingPawn.
- *
- * Licensed under the GNU General Public License v3 or later.
- * See LICENSE for details.
- */
+  This file contains code derived from Stockfish.
+
+  Copyright (C) 2004-2026 The Stockfish developers
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published
+  by the Free Software Foundation, either version 3 of the License,
+  or (at your option) any later version.
+
+  This file has been modified and adapted for the MissingPawn chess
+  engine.
+
+  Modifications:
+  Copyright (C) 2026 Kacper Wieczorek
+*/
 
 #include "MoveGenerator.h"
 
 #include "AttackTables.h"
-#include "Bitboard.h"
-#include "Move.h"
-#include "MoveValidator.h"
 #include "Foundation/Bitboards.h"
+#include "MoveValidator.h"
 
 namespace
 {
-inline int sideIndex(ChessColor c) { return c == ChessColor::White ? 0 : 1; }
-}
-
-void MoveGenerator::generateMoves(
-    const Board& board,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveGenerationContext context;
-    context.side = board.getSideToMove();
-    context.bitboards = Bitboards::computeLight(board);
-    context.checkInfo = checkInfo.kingSquare == Square::None
-        ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
-    const int side = sideIndex(context.side);
-    context.ownOccupancy = context.bitboards.occupied[side];
-    context.enemyOccupancy = context.bitboards.occupied[sideIndex(
-        MoveValidator::oppositeColor(context.side))];
-    context.totalOccupancy = context.bitboards.allOccupied;
-    context.kingSquare = context.checkInfo.kingSquare;
-    context.checkers = context.checkInfo.checkers;
-    context.pinned = context.checkInfo.pinned;
-    context.evasionMask = context.checkInfo.evasionMask;
-    generateMoves(board, context.bitboards, moveList, context.checkInfo);
-    // Generator now produces legal moves directly. filterLegalMoves() removed
-    // from hot path for performance.
-}
-
-void MoveGenerator::generateCaptures(
-    const Board& board,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveGenerationContext context;
-    context.side = board.getSideToMove();
-    context.bitboards = Bitboards::computeLight(board);
-    context.checkInfo = checkInfo.kingSquare == Square::None
-        ? MoveValidator::computeCheckInfo(board, context.side) : checkInfo;
-    const int side = sideIndex(context.side);
-    context.ownOccupancy = context.bitboards.occupied[side];
-    context.enemyOccupancy = context.bitboards.occupied[sideIndex(
-        MoveValidator::oppositeColor(context.side))];
-    context.totalOccupancy = context.bitboards.allOccupied;
-    context.kingSquare = context.checkInfo.kingSquare;
-    context.checkers = context.checkInfo.checkers;
-    context.pinned = context.checkInfo.pinned;
-    context.evasionMask = context.checkInfo.evasionMask;
-    generateCaptures(board, context.bitboards, moveList, context.checkInfo);
-    // Generator now produces legal captures directly.
-}
-
-void MoveGenerator::generateLegalCaptures(
-    const Board& board,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    generateCaptures(board, moveList, checkInfo);
-}
-
-void MoveGenerator::generateMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    moveList.clear();
-
-    const MoveValidator::CheckInfo& legalInfo = checkInfo;
-
-    generateKingMoves(board, bitboards, moveList, legalInfo);
-    if (!legalInfo.doubleCheck)
+    constexpr int colorIndex(ChessColor color)
     {
-        generateQueenMoves(board, bitboards, moveList, legalInfo);
-        generateRookMoves(board, bitboards, moveList, legalInfo);
-        generateBishopMoves(board, bitboards, moveList, legalInfo);
-        generateKnightMoves(board, bitboards, moveList, legalInfo);
-        generatePawnMoves(board, bitboards, moveList, legalInfo);
+        return color == ChessColor::White ? 0 : 1;
     }
-}void MoveGenerator::generateCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    moveList.clear();
 
-    if (!checkInfo.doubleCheck)
+    constexpr Bitboard squareBit(Square square)
     {
-        generateQueenCaptures(board, bitboards, moveList, checkInfo);
-        generateRookCaptures(board, bitboards, moveList, checkInfo);
-        generateBishopCaptures(board, bitboards, moveList, checkInfo);
-        generateKnightCaptures(board, bitboards, moveList, checkInfo);
-        generatePawnCaptures(board, bitboards, moveList, checkInfo);
+        return Bitboard{1} << static_cast<int>(square);
     }
-    generateKingCaptures(board, bitboards, moveList, checkInfo);
-}
 
-// Helper functions for generating moves with CheckInfo
-
-void MoveGenerator::generatePawnMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    ChessColor side = board.getSideToMove();
-
-    Piece pawn =
-        (side == ChessColor::White)
-        ? Piece::WhitePawn
-        : Piece::BlackPawn;
-
-    Bitboard pawns = bitboards.pawns[sideIndex(side)];
-
-    while (pawns)
+    void addPromotions(MoveList &moves, Square from, Square to, Piece pawn, Piece captured, bool capturesOnly)
     {
-        Square from = popLeastSignificantBit(pawns);
-
-        int file = static_cast<int>(from) % 8;
-        int rank = static_cast<int>(from) / 8;
-
-        //-------------------------------------------------
-        // One-square push
-        //-------------------------------------------------
-
-        int forwardRank =
-            rank + (side == ChessColor::White ? 1 : -1);
-
-        if (forwardRank >= 0 && forwardRank < 8)
+        const bool capture = captured != Piece::None;
+        if (!capturesOnly || capture)
+            moves.add(Move(from, to, pawn, capture ? MoveFlag::PromotionCaptureQueen : MoveFlag::PromotionQueen, captured));
+        if (capture)
         {
-            Square to =
-                static_cast<Square>(forwardRank * 8 + file);
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionCaptureRook, captured));
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionCaptureBishop, captured));
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionCaptureKnight, captured));
+        }
+        else if (!capturesOnly)
+        {
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionRook));
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionBishop));
+            moves.add(Move(from, to, pawn, MoveFlag::PromotionKnight));
+        }
+    }
 
-            if (!getBit(bitboards.allOccupied, to))
+    void addPieceMoves(const Board &board, const Bitboards &bitboards, MoveList &moves,
+                       Piece piece, Bitboard sources, Bitboard target)
+    {
+        const Bitboard occupancy = bitboards.allOccupied;
+        while (sources)
+        {
+            const Square from = popLeastSignificantBit(sources);
+            Bitboard destinations = AttackTables::pieceAttacks(piece, from, occupancy) & target;
+            while (destinations)
             {
-                // Quiet-push legality must not skip the rest of this pawn:
-                // the same pawn may still have a legal capture or en passant.
-                bool squareAllowed = !checkInfo.inCheck ||
-                    getBit(checkInfo.evasionMask, to);
+                const Square to = popLeastSignificantBit(destinations);
+                const Piece victim = board.pieceAt(to);
+                moves.add(Move(from, to, piece, victim == Piece::None ? MoveFlag::Quiet : MoveFlag::Capture, victim));
+            }
+        }
+    }
 
-                // Evasion mask already contains the only legal destination squares
-                // while in check. Apply the pin restriction in addition to it.
-                if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
+    void addPawnMoves(const Board &board, const Bitboards &bitboards, MoveList &moves,
+                      ChessColor side, bool capturesOnly, bool includeQuietQueenPromotions,
+                      Bitboard captureTarget)
+    {
+        const bool white = side == ChessColor::White;
+        const Piece pawn = white ? Piece::WhitePawn : Piece::BlackPawn;
+        const Bitboard enemy = bitboards.occupied[colorIndex(MoveValidator::oppositeColor(side))];
+        const int step = white ? 8 : -8;
+        const int startRank = white ? 1 : 6;
+        const int promotionRank = white ? 7 : 0;
+        Bitboard pawns = bitboards.pawns[colorIndex(side)];
+
+        while (pawns)
+        {
+            const Square from = popLeastSignificantBit(pawns);
+            const int fromIndex = static_cast<int>(from);
+            const int file = fromIndex % 8;
+            const int rank = fromIndex / 8;
+
+            if (!capturesOnly)
+            {
+                const int oneIndex = fromIndex + step;
+                if (oneIndex >= 0 && oneIndex < 64 &&
+                    !(bitboards.allOccupied & (Bitboard{1} << oneIndex)))
                 {
-                    if (!(checkInfo.pinRays[static_cast<int>(from)] &
-                          (1ULL << static_cast<int>(to))))
+                    const Square one = static_cast<Square>(oneIndex);
+                    if (oneIndex / 8 == promotionRank)
                     {
-                        squareAllowed = false;
+                        // Stockfish's capture stage also emits queen promotions on a quiet push.
+                        if (includeQuietQueenPromotions)
+                            moves.add(Move(from, one, pawn, MoveFlag::PromotionQueen));
+                        else
+                            addPromotions(moves, from, one, pawn, Piece::None, false);
+                    }
+                    else if (!includeQuietQueenPromotions)
+                    {
+                        moves.add(Move(from, one, pawn, MoveFlag::Quiet));
+                        const int twoIndex = fromIndex + 2 * step;
+                        if (rank == startRank && !(bitboards.allOccupied & (Bitboard{1} << twoIndex)))
+                            moves.add(Move(from, static_cast<Square>(twoIndex), pawn, MoveFlag::DoublePawnPush));
                     }
                 }
+            }
 
-                if (squareAllowed)
+            for (const int fileDelta : {-1, 1})
+            {
+                const int targetFile = file + fileDelta;
+                const int targetIndex = fromIndex + step + fileDelta;
+                if (targetFile < 0 || targetFile >= 8 || targetIndex < 0 || targetIndex >= 64)
+                    continue;
+
+                const Square to = static_cast<Square>(targetIndex);
+                const Piece victim = board.pieceAt(to);
+                if (victim != Piece::None && (enemy & squareBit(to)) &&
+                    (!capturesOnly || (captureTarget & squareBit(to))))
                 {
-                    bool promotion =
-                        (side == ChessColor::White && forwardRank == 7) ||
-                        (side == ChessColor::Black && forwardRank == 0);
-
-                    if (promotion)
-                    {
-                        moveList.add(
-                            Move(from, to, pawn, MoveFlag::PromotionKnight));
-
-                        moveList.add(
-                            Move(from, to, pawn, MoveFlag::PromotionBishop));
-
-                        moveList.add(
-                            Move(from, to, pawn, MoveFlag::PromotionRook));
-
-                        moveList.add(
-                            Move(from, to, pawn, MoveFlag::PromotionQueen));
-                    }
+                    if (targetIndex / 8 == promotionRank)
+                        addPromotions(moves, from, to, pawn, victim, false);
                     else
-                    {
-                        moveList.add(
-                            Move(from, to, pawn, MoveFlag::Quiet));
-
-                        //-----------------------------------------
-                        // Double push
-                        //-----------------------------------------
-
-                        bool startRank =
-                            (side == ChessColor::White && rank == 1) ||
-                            (side == ChessColor::Black && rank == 6);
-
-                        if (startRank)
-                        {
-                            int secondRank =
-                                rank + (side == ChessColor::White ? 2 : -2);
-
-                            Square second =
-                                static_cast<Square>(secondRank * 8 + file);
-
-                            if (!getBit(bitboards.allOccupied, second) &&
-                                (!checkInfo.inCheck || getBit(checkInfo.evasionMask, second)))
-                            {
-                                // Check if double push square is allowed
-                                bool doublePushAllowed = true;
-                                if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-                                {
-                                    // Piece is pinned, check if move is along pin ray
-                                    if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(second))))
-                                    {
-                                        doublePushAllowed = false;
-                                    }
-                                }
-
-                                if (doublePushAllowed)
-                                {
-                                    moveList.add(
-                                        Move(from, second, pawn, MoveFlag::DoublePawnPush));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        //-------------------------------------------------
-        // Captures
-        //-------------------------------------------------
-
-        Bitboard attacks =
-            (side == ChessColor::White)
-            ? AttackTables::whitePawnAttacks(from)
-            : AttackTables::blackPawnAttacks(from);
-
-        while (attacks)
-        {
-            Square to =
-                popLeastSignificantBit(attacks);
-
-            Piece target =
-                board.pieceAt(to);
-
-            if (target == Piece::None)
-                continue;
-
-            if (getPieceColor(target) == side)
-                continue;
-
-            // For captures, check if allowed by pin/eviction constraints
-            bool captureAllowed = true;
-            if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-            {
-                // Piece is pinned, check if capture is along pin ray
-                if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(to))))
-                {
-                    captureAllowed = false;
-                }
-            }
-            if (checkInfo.inCheck)
-            {
-                // In check, only captures of checkers are allowed (or blocks, but pawns can't block with capture)
-                if (!(checkInfo.checkers & (1ULL << static_cast<int>(to))))
-                {
-                    captureAllowed = false;
+                        moves.add(Move(from, to, pawn, MoveFlag::Capture, victim));
                 }
             }
 
-            if (captureAllowed &&
-                (!checkInfo.inCheck || getBit(checkInfo.evasionMask, to)))
+            const Square ep = board.getEnPassantSquare();
+            if (ep != Square::None)
             {
-                bool promotion =
-                    (side == ChessColor::White && rank == 6) ||
-                    (side == ChessColor::Black && rank == 1);
-
-                if (promotion)
-                {
-                    moveList.add(
-                        Move(from, to, pawn,
-                            MoveFlag::PromotionCaptureKnight, target));
-
-                    moveList.add(
-                        Move(from, to, pawn,
-                            MoveFlag::PromotionCaptureBishop, target));
-
-                    moveList.add(
-                        Move(from, to, pawn,
-                            MoveFlag::PromotionCaptureRook, target));
-
-                    moveList.add(
-                        Move(from, to, pawn,
-                            MoveFlag::PromotionCaptureQueen, target));
-                }
-                else
-                {
-                    moveList.add(
-                        Move(from,
-                            to,
-                            pawn,
-                            MoveFlag::Capture,
-                            target));
-                }
-            }
-        }
-
-        //-------------------------------------------------
-        // En passant
-        //-------------------------------------------------
-
-        Square enPassant = board.getEnPassantSquare();
-
-        if (enPassant != Square::None)
-        {
-            Bitboard attacks =
-                (side == ChessColor::White)
-                ? AttackTables::whitePawnAttacks(from)
-                : AttackTables::blackPawnAttacks(from);
-
-            if (getBit(attacks, enPassant))
-            {
-                const int enPassantFile = static_cast<int>(enPassant) % 8;
-                const int enPassantRank = static_cast<int>(enPassant) / 8;
-                const int capturedRank =
-                    side == ChessColor::White ? enPassantRank - 1 : enPassantRank + 1;
-                const Square capturedSquare =
-                    static_cast<Square>(capturedRank * 8 + enPassantFile);
-                const Piece capturedPawn =
-                    side == ChessColor::White ? Piece::BlackPawn : Piece::WhitePawn;
-
-                // A FEN may contain a stale EP square. Do not manufacture an
-                // EP move unless the target is empty and the pawn that would
-                // be captured is present.
-                if (board.pieceAt(enPassant) == Piece::None &&
-                    capturedRank >= 0 && capturedRank < 8 &&
-                    board.pieceAt(capturedSquare) == capturedPawn)
-                {
-                    // En passant changes two occupied squares: the moving pawn
-                    // leaves `from` and the captured pawn disappears from
-                    // `capturedSquare`. Therefore neither the ordinary pin ray
-                    // test nor the normal check evasion mask is sufficient here.
-                    // When in check, EP capture must be on evasionMask (capture checker or block).
-                    bool epAllowed = true;
-                    if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-                    {
-                        if (!(checkInfo.pinRays[static_cast<int>(from)] & (1ULL << static_cast<int>(enPassant))))
-                        {
-                            epAllowed = false;
-                        }
-                    }
-                    if (checkInfo.inCheck && !getBit(checkInfo.evasionMask, enPassant))
-                    {
-                        epAllowed = false;
-                    }
-
-                    if (epAllowed)
-                    {
-                        moveList.add(
-                            Move(
-                                from,
-                                enPassant,
-                                pawn,
-                                MoveFlag::EnPassant,
-                                capturedPawn));
-                    }
-                }
+                const int epIndex = static_cast<int>(ep);
+                const int epFile = epIndex % 8;
+                const int epRank = epIndex / 8;
+                const int capturedIndex = epIndex + (white ? -8 : 8);
+                const Piece capturedPawn = white ? Piece::BlackPawn : Piece::WhitePawn;
+                if (std::abs(epFile - file) == 1 && epRank == rank + (white ? 1 : -1) &&
+                    board.pieceAt(ep) == Piece::None && capturedIndex >= 0 && capturedIndex < 64 &&
+                    board.pieceAt(static_cast<Square>(capturedIndex)) == capturedPawn &&
+                    (!capturesOnly || (captureTarget & squareBit(ep))))
+                    moves.add(Move(from, ep, pawn, MoveFlag::EnPassant, capturedPawn));
             }
         }
     }
-}void MoveGenerator::generateKnightMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
 
-    Piece knight =
-        (side == ChessColor::White)
-        ? Piece::WhiteKnight
-        : Piece::BlackKnight;
-
-    Bitboard knights = bitboards.knights[sideIndex(side)];
-
-    while (knights)
+    void addCastlingMoves(const Board &board, MoveList &moves)
     {
-        Square from = popLeastSignificantBit(knights);
+        const ChessColor side = board.getSideToMove();
+        const bool white = side == ChessColor::White;
+        const Piece king = white ? Piece::WhiteKing : Piece::BlackKing;
+        const Piece rook = white ? Piece::WhiteRook : Piece::BlackRook;
+        const Square home = white ? Square::E1 : Square::E8;
+        const Square rookKingSide = white ? Square::H1 : Square::H8;
+        const Square rookQueenSide = white ? Square::A1 : Square::A8;
+        const Square f = white ? Square::F1 : Square::F8;
+        const Square g = white ? Square::G1 : Square::G8;
+        const Square b = white ? Square::B1 : Square::B8;
+        const Square c = white ? Square::C1 : Square::C8;
+        const Square d = white ? Square::D1 : Square::D8;
+        const uint8_t kingSideRight = white ? 0b0001 : 0b0100;
+        const uint8_t queenSideRight = white ? 0b0010 : 0b1000;
 
-        Bitboard attacks =
-            AttackTables::knightAttacks(from);
+        if (board.pieceAt(home) != king)
+            return;
+        if ((board.getCastlingRights() & kingSideRight) && board.pieceAt(rookKingSide) == rook &&
+            board.pieceAt(f) == Piece::None && board.pieceAt(g) == Piece::None)
+            moves.add(Move(home, g, king, MoveFlag::KingCastle));
+        if ((board.getCastlingRights() & queenSideRight) && board.pieceAt(rookQueenSide) == rook &&
+            board.pieceAt(b) == Piece::None && board.pieceAt(c) == Piece::None && board.pieceAt(d) == Piece::None)
+            moves.add(Move(home, c, king, MoveFlag::QueenCastle));
+    }
 
-        // Remove squares occupied by our own pieces
-        attacks &= ~ownOccupancy;
-
-        if (checkInfo.inCheck)
-            attacks &= checkInfo.evasionMask;
-
-        // Apply pin/eviction constraints
-        if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-        {
-            // Piece is pinned - knights can't be pinned in chess, but handle anyway
-            attacks &= checkInfo.pinRays[static_cast<int>(from)];
-        }
-        // The evasion mask contains both the checker square and the squares
-        // between a sliding checker and the king. A knight may legally block
-        // a sliding check by jumping to one of those intermediate squares.
-
-        while (attacks)
-        {
-            Square to = popLeastSignificantBit(attacks);
-
-            Piece target = board.pieceAt(to);
-
-            MoveFlag flag =
-                (target == Piece::None)
-                ? MoveFlag::Quiet
-                : MoveFlag::Capture;
-
-            moveList.add(Move(from, to, knight, flag, target));
-        }
+    void filterLegalMoves(const Board &board, MoveList &moves)
+    {
+        const int generatedCount = moves.size();
+        int legalCount = 0;
+        for (int read = 0; read < generatedCount; ++read)
+            if (MoveValidator::isMoveLegalSlow(board, moves[read]))
+                moves[legalCount++] = moves[read];
+        moves.setSize(legalCount);
     }
 }
 
-void MoveGenerator::generateBishopMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
+void MoveGenerator::generateMoves(const Board &board, MoveList &moves,
+                                  const MoveValidator::CheckInfo &)
 {
-    ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
-    Bitboard allOccupancy = bitboards.allOccupied;
-
-    Piece bishop =
-        (side == ChessColor::White)
-        ? Piece::WhiteBishop
-        : Piece::BlackBishop;
-
-    Bitboard bishops = bitboards.bishops[sideIndex(side)];
-
-    while (bishops)
-    {
-        Square from = popLeastSignificantBit(bishops);
-
-        Bitboard attacks = AttackTables::bishopAttacks(from, allOccupancy);
-        attacks &= ~ownOccupancy;
-
-        // Apply pin/eviction constraints
-        if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-        {
-            // Piece is pinned, restrict to pin ray
-            attacks &= checkInfo.pinRays[static_cast<int>(from)];
-        }
-        if (checkInfo.inCheck)
-        {
-            // In check, only moves that capture checkers or block are allowed
-            // Evasion mask jest wyliczana raz w computeCheckInfo().
-
-            attacks &= checkInfo.evasionMask;
-        }
-
-        while (attacks)
-        {
-            Square to = popLeastSignificantBit(attacks);
-
-            Piece target = board.pieceAt(to);
-
-            MoveFlag flag =
-                (target == Piece::None)
-                ? MoveFlag::Quiet
-                : MoveFlag::Capture;
-
-            moveList.add(Move(from, to, bishop, flag, target));
-        }
-    }
+    const Bitboards bitboards = Bitboards::computeLight(board);
+    generateMoves(board, bitboards, moves, MoveValidator::CheckInfo{});
 }
 
-void MoveGenerator::generateRookMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
+void MoveGenerator::generateMoves(const Board &board, const Bitboards &bitboards, MoveList &moves,
+                                  const MoveValidator::CheckInfo &)
 {
-    ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
-    Bitboard allOccupancy = bitboards.allOccupied;
+    moves.clear();
+    const ChessColor side = board.getSideToMove();
+    const int index = colorIndex(side);
+    const Bitboard target = ~bitboards.occupied[index];
 
-    Piece rook =
-        (side == ChessColor::White)
-        ? Piece::WhiteRook
-        : Piece::BlackRook;
+    addPawnMoves(board, bitboards, moves, side, false, false, target);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteKnight : Piece::BlackKnight,
+                  bitboards.knights[index], target);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop,
+                  bitboards.bishops[index], target);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook,
+                  bitboards.rooks[index], target);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen,
+                  bitboards.queens[index], target);
 
-    Bitboard rooks = bitboards.rooks[sideIndex(side)];
-
-    while (rooks)
-    {
-        Square from = popLeastSignificantBit(rooks);
-
-        Bitboard attacks = AttackTables::rookAttacks(from, allOccupancy);
-        attacks &= ~ownOccupancy;
-
-        // Apply pin/eviction constraints
-        if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-        {
-            // Piece is pinned, restrict to pin ray
-            attacks &= checkInfo.pinRays[static_cast<int>(from)];
-        }
-        if (checkInfo.inCheck)
-        {
-            // In check, only moves that capture checkers or block are allowed
-            // Evasion mask jest wyliczana raz w computeCheckInfo().
-
-            attacks &= checkInfo.evasionMask;
-        }
-
-        while (attacks)
-        {
-            Square to = popLeastSignificantBit(attacks);
-
-            Piece target = board.pieceAt(to);
-
-            MoveFlag flag =
-                (target == Piece::None)
-                ? MoveFlag::Quiet
-                : MoveFlag::Capture;
-
-            moveList.add(Move(from, to, rook, flag, target));
-        }
-    }
+    // King destinations are candidate squares; exact safety is checked below.
+    const Square kingSquare = board.getKingSquare(side);
+    if (kingSquare != Square::None)
+        addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing,
+                      bitboards.kings[index], AttackTables::kingAttacks(kingSquare) & ~bitboards.occupied[index]);
+    addCastlingMoves(board, moves);
+    filterLegalMoves(board, moves);
 }
 
-void MoveGenerator::generateQueenMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
+void MoveGenerator::generateCaptures(const Board &board, MoveList &moves,
+                                     const MoveValidator::CheckInfo &)
 {
-    ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
-    Bitboard allOccupancy = bitboards.allOccupied;
-
-    Piece queen =
-        (side == ChessColor::White)
-        ? Piece::WhiteQueen
-        : Piece::BlackQueen;
-
-    Bitboard queens = bitboards.queens[sideIndex(side)];
-
-    while (queens)
-    {
-        Square from = popLeastSignificantBit(queens);
-
-        Bitboard attacks = AttackTables::queenAttacks(from, allOccupancy);
-        attacks &= ~ownOccupancy;
-
-        // Apply pin/eviction constraints
-        if (checkInfo.pinned & (1ULL << static_cast<int>(from)))
-        {
-            // Piece is pinned, restrict to pin ray
-            attacks &= checkInfo.pinRays[static_cast<int>(from)];
-        }
-        if (checkInfo.inCheck)
-        {
-            // In check, only moves that capture checkers or block are allowed
-            // Evasion mask jest wyliczana raz w computeCheckInfo().
-
-            attacks &= checkInfo.evasionMask;
-        }
-
-        while (attacks)
-        {
-            Square to = popLeastSignificantBit(attacks);
-
-            Piece target = board.pieceAt(to);
-
-            MoveFlag flag =
-                (target == Piece::None)
-                ? MoveFlag::Quiet
-                : MoveFlag::Capture;
-
-            moveList.add(Move(from, to, queen, flag, target));
-        }
-    }
+    const Bitboards bitboards = Bitboards::computeLight(board);
+    generateCaptures(board, bitboards, moves, MoveValidator::CheckInfo{});
 }
 
-void MoveGenerator::generateKingMoves(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
+void MoveGenerator::generateLegalCaptures(const Board &board, MoveList &moves,
+                                          const MoveValidator::CheckInfo &checkInfo)
 {
-    ChessColor side = board.getSideToMove();
-    Bitboard ownOccupancy = bitboards.occupied[sideIndex(side)];
-
-    Piece king =
-        (side == ChessColor::White)
-        ? Piece::WhiteKing
-        : Piece::BlackKing;
-
-    Bitboard kings = bitboards.kings[sideIndex(side)];
-
-    while (kings)
-    {
-        Square from = popLeastSignificantBit(kings);
-
-        Bitboard attacks =
-            AttackTables::kingAttacks(from);
-
-        // Remove squares occupied by our own pieces
-        attacks &= ~ownOccupancy;
-
-        // Do not reject king captures using the attack map from the original
-        // position. When the king captures, the captured piece disappears and
-        // may have been the only blocker or attacker on the destination square.
-        // isMoveLegal() performs the definitive virtual-position check after
-        // generation, so generate every non-own king destination here.
-        Bitboard capturableEnemy = attacks;
-
-        while (capturableEnemy)
-        {
-            Square to = popLeastSignificantBit(capturableEnemy);
-
-            Piece target = board.pieceAt(to);
-
-            MoveFlag flag =
-                (target == Piece::None)
-                ? MoveFlag::Quiet
-                : MoveFlag::Capture;
-
-            // Filter king moves to attacked squares.
-            // For quiet moves: destination must not be attacked.
-            // For captures: destination must not be attacked by any piece
-            // other than the captured piece (which disappears after capture).
-            // When in check, also respect evasionMask.
-            bool kingMoveLegal = true;
-            if (flag == MoveFlag::Quiet)
-            {
-                if (getBit(checkInfo.enemyAttacks, to))
-                {
-                    kingMoveLegal = false;
-                }
-                // When in check, king can only move to squares in evasionMask
-                if (checkInfo.inCheck && !getBit(checkInfo.evasionMask, to))
-                {
-                    kingMoveLegal = false;
-                }
-            }
-            else // Capture
-            {
-                // When in check, king can only capture the checker
-                if (checkInfo.inCheck && !getBit(checkInfo.checkers, to))
-                {
-                    kingMoveLegal = false;
-                }
-                else if (!checkInfo.inCheck)
-                {
-                    // Check if the captured piece is the only attacker of 'to'.
-                    bool capturedWasOnlyAttacker = true;
-
-                    if (target == Piece::WhiteRook || target == Piece::BlackRook ||
-                        target == Piece::WhiteBishop || target == Piece::BlackBishop ||
-                        target == Piece::WhiteQueen || target == Piece::BlackQueen)
-                    {
-                        capturedWasOnlyAttacker = false;
-                    }
-
-                    if (!capturedWasOnlyAttacker)
-                    {
-                        kingMoveLegal = false;
-                    }
-                }
-            }
-
-            if (kingMoveLegal)
-            {
-                moveList.add(
-                    Move(from, to, king, flag, target));
-            }
-        }
-
-        //--------------------------------------------------
-        // Castling - w jednym if-else if dla obu kolorów
-        //--------------------------------------------------
-
-        if (side == ChessColor::White)
-        {
-            // King side castle
-            if ((board.getCastlingRights() & 0b0001) &&
-                board.pieceAt(Square::H1) == Piece::WhiteRook &&
-                board.pieceAt(Square::F1) == Piece::None &&
-                board.pieceAt(Square::G1) == Piece::None &&
-                // King must not be in check and squares passed through must not be attacked
-                !checkInfo.inCheck &&
-!getBit(checkInfo.enemyAttacks, Square::F1) &&
-            !getBit(checkInfo.enemyAttacks, Square::G1))
-            {
-                moveList.add(
-                    Move(Square::E1, Square::G1,
-                         Piece::WhiteKing, MoveFlag::KingCastle));
-            }
-
-            // Queen side castle
-            if ((board.getCastlingRights() & 0b0010) &&
-                board.pieceAt(Square::A1) == Piece::WhiteRook &&
-                board.pieceAt(Square::B1) == Piece::None &&
-                board.pieceAt(Square::C1) == Piece::None &&
-                board.pieceAt(Square::D1) == Piece::None &&
-                // King must not be in check and squares passed through must not be attacked
-                !checkInfo.inCheck &&
-!getBit(checkInfo.enemyAttacks, Square::D1) &&
-            !getBit(checkInfo.enemyAttacks, Square::C1))
-            {
-                moveList.add(
-                    Move(Square::E1, Square::C1,
-                         Piece::WhiteKing, MoveFlag::QueenCastle));
-            }
-        }
-        else
-        {
-            // King side castle
-            if ((board.getCastlingRights() & 0b0100) &&
-                board.pieceAt(Square::H8) == Piece::BlackRook &&
-                board.pieceAt(Square::F8) == Piece::None &&
-                board.pieceAt(Square::G8) == Piece::None &&
-                // King must not be in check and squares passed through must not be attacked
-                !checkInfo.inCheck &&
-!getBit(checkInfo.enemyAttacks, Square::F8) &&
-            !getBit(checkInfo.enemyAttacks, Square::G8))
-            {
-                moveList.add(
-                    Move(Square::E8, Square::G8,
-                         Piece::BlackKing, MoveFlag::KingCastle));
-            }
-
-            // Queen side castle
-            if ((board.getCastlingRights() & 0b1000) &&
-                board.pieceAt(Square::A8) == Piece::BlackRook &&
-                board.pieceAt(Square::B8) == Piece::None &&
-                board.pieceAt(Square::C8) == Piece::None &&
-                board.pieceAt(Square::D8) == Piece::None &&
-                // King must not be in check and squares passed through must not be attacked
-                !checkInfo.inCheck &&
-!getBit(checkInfo.enemyAttacks, Square::D8) &&
-            !getBit(checkInfo.enemyAttacks, Square::C8))
-            {
-                moveList.add(
-                    Move(Square::E8, Square::C8,
-                         Piece::BlackKing, MoveFlag::QueenCastle));
-            }
-        }
-    }
+    generateCaptures(board, moves, checkInfo);
 }
 
-// Helper functions for capture generation
-
-void MoveGenerator::generatePawnCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
+void MoveGenerator::generateCaptures(const Board &board, const Bitboards &bitboards, MoveList &moves,
+                                     const MoveValidator::CheckInfo &)
 {
-    // For captures, we reuse the pawn move generation but filter for captures only
-    MoveList allPawnMoves;
-    generatePawnMoves(board, bitboards, allPawnMoves, checkInfo);
+    moves.clear();
+    const ChessColor side = board.getSideToMove();
+    const int index = colorIndex(side);
+    const int enemyIndex = colorIndex(MoveValidator::oppositeColor(side));
+    const Bitboard enemy = bitboards.occupied[enemyIndex] &
+                           ~(side == ChessColor::White ? bitboards.kings[1] : bitboards.kings[0]);
 
-    for (int i = 0; i < allPawnMoves.size(); i++)
-    {
-        const Move& move = allPawnMoves[i];
-        if (move.flag == MoveFlag::Capture ||
-            move.flag >= MoveFlag::PromotionCaptureKnight ||
-            move.flag == MoveFlag::EnPassant)
-        {
-            moveList.add(move);
-        }
-    }
+    // Captures include all captures and queen promotions, matching Stockfish's capture stage.
+    addPawnMoves(board, bitboards, moves, side, true, true, enemy);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteKnight : Piece::BlackKnight,
+                  bitboards.knights[index], enemy);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteBishop : Piece::BlackBishop,
+                  bitboards.bishops[index], enemy);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook,
+                  bitboards.rooks[index], enemy);
+    addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen,
+                  bitboards.queens[index], enemy);
+    const Square kingSquare = board.getKingSquare(side);
+    if (kingSquare != Square::None)
+        addPieceMoves(board, bitboards, moves, side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing,
+                      bitboards.kings[index], AttackTables::kingAttacks(kingSquare) & enemy);
+
+    // A quiet queen promotion is part of Stockfish's CAPTURES stage, so retain it here.
+    // en passant was generated by addPawnMoves even though its destination is empty.
+    filterLegalMoves(board, moves);
 }
-
-void MoveGenerator::generateKnightCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveList allKnightMoves;
-    generateKnightMoves(board, bitboards, allKnightMoves, checkInfo);
-
-    for (int i = 0; i < allKnightMoves.size(); i++)
-    {
-        const Move& move = allKnightMoves[i];
-        if (move.flag == MoveFlag::Capture)
-        {
-            moveList.add(move);
-        }
-    }
-}
-void MoveGenerator::generateBishopCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveList allBishopMoves;
-    generateBishopMoves(board, bitboards, allBishopMoves, checkInfo);
-
-    for (int i = 0; i < allBishopMoves.size(); i++)
-    {
-        const Move& move = allBishopMoves[i];
-        if (move.flag == MoveFlag::Capture)
-        {
-            moveList.add(move);
-        }
-    }
-}
-
-void MoveGenerator::generateRookCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveList allRookMoves;
-    generateRookMoves(board, bitboards, allRookMoves, checkInfo);
-
-    for (int i = 0; i < allRookMoves.size(); i++)
-    {
-        const Move& move = allRookMoves[i];
-        if (move.flag == MoveFlag::Capture)
-        {
-            moveList.add(move);
-        }
-    }
-}
-
-void MoveGenerator::generateQueenCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveList allQueenMoves;
-    generateQueenMoves(board, bitboards, allQueenMoves, checkInfo);
-
-    for (int i = 0; i < allQueenMoves.size(); i++)
-    {
-        const Move& move = allQueenMoves[i];
-        if (move.flag == MoveFlag::Capture)
-        {
-            moveList.add(move);
-        }
-    }
-}
-
-void MoveGenerator::generateKingCaptures(
-    const Board& board,
-    const Bitboards& bitboards,
-    MoveList& moveList,
-    const MoveValidator::CheckInfo& checkInfo)
-{
-    MoveList allKingMoves;
-    generateKingMoves(board, bitboards, allKingMoves, checkInfo);
-
-    for (int i = 0; i < allKingMoves.size(); i++)
-    {
-        const Move& move = allKingMoves[i];
-        if (move.flag == MoveFlag::Capture)
-        {
-            moveList.add(move);
-        }
-    }
-}
-

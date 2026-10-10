@@ -1,12 +1,19 @@
 /*
- * MissingPawn
- * Copyright (C) 2026 Kacper Wieczorek
- *
- * This file is part of MissingPawn.
- *
- * Licensed under the GNU General Public License v3 or later.
- * See LICENSE for details.
- */
+  This file contains code derived from Stockfish.
+
+  Copyright (C) 2004-2026 The Stockfish developers
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published
+  by the Free Software Foundation, either version 3 of the License,
+  or (at your option) any later version.
+
+  This file has been modified and adapted for the MissingPawn chess
+  engine.
+
+  Modifications:
+  Copyright (C) 2026 Kacper Wieczorek
+*/
 
 #include "Game/Fen.h"
 
@@ -152,11 +159,34 @@ bool Fen::load(Board& board, const std::string& fen)
     {
         const Square square = stringToSquare(fields[3]);
         const int rankIndex = static_cast<int>(square) / 8;
-        if (square == Square::None || (rankIndex != 2 && rankIndex != 5))
+        const int expectedRank = board.getSideToMove() == ChessColor::White ? 5 : 2;
+        if (square == Square::None || rankIndex != expectedRank)
         {
             return false;
         }
-        board.enPassantSquare = square;
+
+        // Stockfish records an en-passant square only when a legal EP capture
+        // exists. FENs often contain a stale target after a double pawn push;
+        // such a target has no effect on legal move generation and must not
+        // prevent an otherwise valid position from being loaded.
+        const bool white = board.getSideToMove() == ChessColor::White;
+        const int squareIndex = static_cast<int>(square);
+        const int capturedIndex = squareIndex + (white ? -8 : 8);
+        const int capturerRank = squareIndex / 8 + (white ? -1 : 1);
+        const Piece capturedPawn = white ? Piece::BlackPawn : Piece::WhitePawn;
+        const Piece capturerPawn = white ? Piece::WhitePawn : Piece::BlackPawn;
+        bool hasCapturingPawn = false;
+        for (int fileDelta : {-1, 1})
+        {
+            const int file = squareIndex % 8 + fileDelta;
+            if (file >= 0 && file < 8 && capturerRank >= 0 && capturerRank < 8 &&
+                board.pieceAt(static_cast<Square>(capturerRank * 8 + file)) == capturerPawn)
+                hasCapturingPawn = true;
+        }
+
+        if (board.pieceAt(square) == Piece::None && capturedIndex >= 0 && capturedIndex < 64 &&
+            board.pieceAt(static_cast<Square>(capturedIndex)) == capturedPawn && hasCapturingPawn)
+            board.enPassantSquare = square;
     }
 
     if (!parseNonNegativeInt(fields[4], board.halfmoveClock) ||
