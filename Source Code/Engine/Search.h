@@ -46,6 +46,9 @@ public:
     static bool enterNode(uint64_t zobristKey);
     static void exitNode(uint64_t zobristKey);
 
+    static std::vector<uint64_t> repetitionHistory;
+    static std::vector<uint64_t> repetitionPath;
+
 private:
     static int negamax(Board& board, int depth, int alpha, int beta, int ply);
     static int terminalScore(
@@ -57,8 +60,5 @@ private:
 
     static bool ponderEnabled;
 
-    // Pozycje historii i aktualnej gałęzi. Liniowe zliczanie jest ograniczone
-    // do historii partii oraz bieżącej głębokości, bez hash-map alokowanej w node.
-    static std::vector<uint64_t> repetitionHistory;
-    static std::vector<uint64_t> repetitionPath;
+
 };

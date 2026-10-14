@@ -225,13 +225,30 @@ struct NodeRepGuard
 
 bool Search::enterNode(uint64_t zobristKey)
 {
-    repetitionPath.push_back(zobristKey);
-    int count = 0;
-    for (const uint64_t key : repetitionHistory)
-        if (key == zobristKey) ++count;
+    // Sprawdzamy powtórzenie na bieżącej ścieżce wyszukiwania (cykl w drzewie)
     for (const uint64_t key : repetitionPath)
-        if (key == zobristKey) ++count;
-    return count >= 3;
+    {
+        if (key == zobristKey)
+            return true;
+    }
+
+    // Sprawdzamy historię gry
+    int historyCount = 0;
+    for (const uint64_t key : repetitionHistory)
+    {
+        if (key == zobristKey)
+            ++historyCount;
+    }
+
+    if (historyCount >= 2)
+        return true;
+
+    // Powrót do pozycji z korzenia wyszukiwania wewnątrz drzewa (ply >= 1)
+    if (!repetitionHistory.empty() && zobristKey == repetitionHistory.back())
+        return true;
+
+    repetitionPath.push_back(zobristKey);
+    return false;
 }
 
 void Search::exitNode(uint64_t zobristKey)
@@ -239,15 +256,6 @@ void Search::exitNode(uint64_t zobristKey)
     if (!repetitionPath.empty() && repetitionPath.back() == zobristKey)
     {
         repetitionPath.pop_back();
-        return;
-    }
-    for (auto it = repetitionPath.begin(); it != repetitionPath.end(); ++it)
-    {
-        if (*it == zobristKey)
-        {
-            repetitionPath.erase(it);
-            return;
-        }
     }
 }
 
@@ -569,14 +577,22 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         return 0;
     }
 
-    // Repetition check in quiesce (same as in negamax)
     const uint64_t nodeKey = board.getZobristKey();
-    if (enterNode(nodeKey))
+    bool needExit = false;
+
+    if (repetitionPath.empty() || repetitionPath.back() != nodeKey)
     {
-        exitNode(nodeKey);
-        return 0;
+        if (enterNode(nodeKey))
+        {
+            return 0;
+        }
+        needExit = true;
     }
-    NodeRepGuard repGuard(nodeKey);
+    struct QRepGuard {
+        uint64_t k;
+        bool active;
+        ~QRepGuard() { if (active) Search::exitNode(k); }
+    } qGuard{nodeKey, needExit};
 
     //--------------------------------------------------
     // Transposition Table probe in quiescence
@@ -666,6 +682,12 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     bool completed = true;
     for (int i = 0; i < moves.size(); i++)
     {
+        if (shouldStopSearch())
+        {
+            completed = false;
+            break;
+        }
+
         if (shouldStopSearch())
         {
             completed = false;
@@ -801,7 +823,6 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     // Powtórzenie na ścieżce searchu (lub w historii gry) - remis.
     if (enterNode(nodeKey))
     {
-        exitNode(nodeKey);
         return 0;
     }
     NodeRepGuard repGuard(nodeKey);

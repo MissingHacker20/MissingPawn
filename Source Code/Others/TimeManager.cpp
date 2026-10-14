@@ -44,6 +44,7 @@ void TimeManager::reset()
     stopRequested.store(false, std::memory_order_relaxed);
 
     infiniteSearch = false;
+    ponder = false;
 
     maxDepth = 64;
 
@@ -62,6 +63,7 @@ void TimeManager::reset()
     nodesSearched = 0;
 
     mateSearch = 0;
+    ponder = false;
 
     movesToGo = 30;
 
@@ -132,7 +134,7 @@ bool TimeManager::shouldStop()
         return true;
     }
 
-    if (infiniteSearch)
+    if (infiniteSearch || ponder)
     {
         return false;
     }
@@ -263,8 +265,6 @@ void TimeManager::setMovesToGo(int moves)
 void TimeManager::setNodeLimit(uint64_t nodes)
 {
     nodeLimit = nodes;
-
-    nodesSearched = 0;
 }
 
 void TimeManager::setMateSearch(int depth)

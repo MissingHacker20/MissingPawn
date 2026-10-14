@@ -177,7 +177,7 @@ bool UCI::executeCommand(
          commandName == "ucinewgame" ||
          commandName == "go"))
     {
-        std::cout << "info string Ignorowanie komendy podczas searchu." << std::endl;
+        std::cout << "info string Ignoring commands during the search." << std::endl;
         return true;
     }
 
@@ -385,17 +385,13 @@ void UCI::run()
         }
     }
 
-    // EOF również musi zatrzymać wyszukiwanie. Przy "go infinite"
-    // samo join() mogłoby zablokować proces na zawsze.
+    // EOF ends the UCI session. Always request cancellation before joining:
+    // the worker may not yet have counted its first node (or may be waiting
+    // on a finite depth/time limit), and joining it without cancellation can
+    // make EOF hang indefinitely for "go infinite".
     if (searchThread.joinable())
     {
-        // Only stop the search if it has actually done some work (nodes > 0).
-        // If nodes == 0, the search thread just started and hasn't entered
-        // the main loop yet; stopping it now would kill it before it runs.
-        if (TimeManager::getNodesSearched() > 0)
-        {
-            TimeManager::stop();
-        }
+        TimeManager::stop();
         searchThread.join();
     }
 }
