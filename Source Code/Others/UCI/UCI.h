@@ -30,6 +30,8 @@ public:
 
     static bool isDebugMode();
 
+    static uint64_t perft(Board& board, int depth);
+
 private:
 
     // Wątek przeszukujący - pozwala na przerywanie searchu (komenda

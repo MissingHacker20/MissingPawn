@@ -885,6 +885,24 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     MoveList moves;
     MoveGenerator::generateMoves(board, moves, pseudoInfo);
 
+    // Verify ttMove is legal/pseudo-legal in this position
+    if (ttMove.from != Square::None)
+    {
+        bool ttMoveValid = false;
+        for (int i = 0; i < moves.size(); ++i)
+        {
+            if (moves[i] == ttMove)
+            {
+                ttMoveValid = true;
+                break;
+            }
+        }
+        if (!ttMoveValid)
+        {
+            ttMove = Move{};
+        }
+    }
+
     // Brak legalnych ruchów jest terminalny również wtedy, gdy pozycja jest
     // patem. Nie wolno używać wartości 0 jako jedynego sygnału z
     // terminalScore(), ponieważ 0 oznacza zarówno pat/remis, jak i pozycję

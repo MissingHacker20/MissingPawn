@@ -109,9 +109,7 @@ std::atomic<bool> UCI::searchStarted{false};
 static std::vector<BookEntry> g_openingBook;
 static bool g_openingBookEnabled = false;
 
-namespace
-{
-uint64_t perft(Board& board, int depth)
+uint64_t UCI::perft(Board& board, int depth)
 {
     if (depth == 0)
         return 1;
@@ -123,12 +121,14 @@ uint64_t perft(Board& board, int depth)
     {
         UndoInfo undo;
         board.makeMove(moves[i], undo);
-        nodes += perft(board, depth - 1);
+        nodes += UCI::perft(board, depth - 1);
         board.undoMove(moves[i], undo);
     }
     return nodes;
 }
 
+namespace
+{
 void perftDivide(Board& board, int depth)
 {
     if (depth == 0)
@@ -144,7 +144,7 @@ void perftDivide(Board& board, int depth)
     {
         UndoInfo undo;
         board.makeMove(moves[i], undo);
-        const uint64_t nodes = perft(board, depth - 1);
+        const uint64_t nodes = UCI::perft(board, depth - 1);
         board.undoMove(moves[i], undo);
         total += nodes;
         std::cout << "info string divide " << moves[i].toUCI()
@@ -230,7 +230,7 @@ bool UCI::executeCommand(
                     perftDivide(testBoard, depth);
                     return true;
                 }
-                const uint64_t nodes = perft(testBoard, depth);
+                const uint64_t nodes = UCI::perft(testBoard, depth);
                 const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - start).count();
                 const uint64_t nps = elapsed > 0
