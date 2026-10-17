@@ -28,6 +28,7 @@ public:
     struct Entry
     {
         uint64_t key = 0;
+        bool empty = true;
         int depth = 0;
         int score = 0;
         NodeType type = NodeType::Exact;

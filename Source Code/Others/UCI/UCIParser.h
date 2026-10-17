@@ -19,6 +19,7 @@ struct GoParameters
     int depth = 0;
 
     int moveTime = 0;
+    bool hasMoveTime = false;
 
     int whiteTime = 0;
     int blackTime = 0;

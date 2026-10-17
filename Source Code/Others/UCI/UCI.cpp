@@ -452,9 +452,12 @@ void UCI::commandGo(
 
     TimeManager::start();
 
-    TimeManager::setDepth(params.depth);
+    if (params.depth > 0)
+    {
+        TimeManager::setDepth(params.depth);
+    }
 
-    if (params.moveTime > 0)
+    if (params.hasMoveTime)
     {
         TimeManager::setMoveTime(
             params.moveTime);

@@ -67,6 +67,7 @@ GoParameters UCIParser::parseGo(
         else if (tokens[i] == "movetime")
         {
             if (!parseInt(params.moveTime)) return {};
+            params.hasMoveTime = true;
         }
         else if (tokens[i] == "wtime")
         {

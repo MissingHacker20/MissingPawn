@@ -101,7 +101,7 @@ TranspositionTable::Entry* TranspositionTable::probe(uint64_t key)
 
     for (size_t i = 0; i < ClusterSize; ++i)
     {
-        if (cluster[i].key == key)
+        if (!cluster[i].empty && cluster[i].key == key)
         {
             return &cluster[i];
         }
@@ -121,7 +121,7 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
     for (size_t i = 0; i < ClusterSize; ++i)
     {
         Entry& candidate = cluster[i];
-        if (candidate.key == key)
+        if (!candidate.empty && candidate.key == key)
         {
             // A fresh move is useful for ordering even when the score was
             // obtained at a shallower depth.
@@ -137,7 +137,7 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
             return;
         }
 
-        if (candidate.key == 0)
+        if (candidate.empty)
         {
             replacement = &candidate;
             break;
@@ -152,7 +152,7 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
             replacement = &candidate;
     }
 
-    *replacement = Entry{key, depth, score, type, bestMove, currentAge};
+    *replacement = Entry{key, false, depth, score, type, bestMove, currentAge};
 }
 
 size_t TranspositionTable::size()

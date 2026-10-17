@@ -87,30 +87,26 @@ namespace
             const int file = fromIndex % 8;
             const int rank = fromIndex / 8;
 
-            if (!capturesOnly)
-            {
-                const int oneIndex = fromIndex + step;
-                if (oneIndex >= 0 && oneIndex < 64 &&
-                    !(bitboards.allOccupied & (Bitboard{1} << oneIndex)))
-                {
-                    const Square one = static_cast<Square>(oneIndex);
-                    if (oneIndex / 8 == promotionRank)
-                    {
-                        // Stockfish's capture stage also emits queen promotions on a quiet push.
-                        if (includeQuietQueenPromotions)
-                            moves.add(Move(from, one, pawn, MoveFlag::PromotionQueen));
-                        else
-                            addPromotions(moves, from, one, pawn, Piece::None, false);
-                    }
-                    else if (!includeQuietQueenPromotions)
-                    {
-                        moves.add(Move(from, one, pawn, MoveFlag::Quiet));
-                        const int twoIndex = fromIndex + 2 * step;
-                        if (rank == startRank && !(bitboards.allOccupied & (Bitboard{1} << twoIndex)))
-                            moves.add(Move(from, static_cast<Square>(twoIndex), pawn, MoveFlag::DoublePawnPush));
-                    }
-                }
-            }
+             const int oneIndex = fromIndex + step;
+             if (oneIndex >= 0 && oneIndex < 64 &&
+                 !(bitboards.allOccupied & (Bitboard{1} << oneIndex))) {
+                 const Square one = static_cast<Square>(oneIndex);
+                 if (oneIndex / 8 == promotionRank) {
+                     if (includeQuietQueenPromotions) {
+                         moves.add(Move(from, one, pawn, MoveFlag::PromotionQueen));
+                     } else {
+                         addPromotions(moves, from, one, pawn, Piece::None, false);
+                     }
+                 } else {
+                     if (!capturesOnly) {
+                         moves.add(Move(from, one, pawn, MoveFlag::Quiet));
+                         const int twoIndex = fromIndex + 2 * step;
+                         if (rank == startRank && !(bitboards.allOccupied & (Bitboard{1} << twoIndex))) {
+                             moves.add(Move(from, static_cast<Square>(twoIndex), pawn, MoveFlag::DoublePawnPush));
+                         }
+                     }
+                 }
+             }
 
             for (const int fileDelta : {-1, 1})
             {

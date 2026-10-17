@@ -82,19 +82,19 @@ int nonPawnMaterialCount(const Board& board)
 
 int scoreToTT(int score, int ply)
 {
-    if (score > Search::MateScore - Search::MaxPly)
-        return score + ply;
-    if (score < -Search::MateScore + Search::MaxPly)
-        return score - ply;
+    if (score > Search::MateScore - Search::MaxPly * 10)
+        return score + ply * 10;
+    if (score < -Search::MateScore + Search::MaxPly * 10)
+        return score - ply * 10;
     return score;
 }
 
 int scoreFromTT(int score, int ply)
 {
-    if (score > Search::MateScore - Search::MaxPly)
-        return score - ply;
-    if (score < -Search::MateScore + Search::MaxPly)
-        return score + ply;
+    if (score > Search::MateScore - Search::MaxPly * 10)
+        return score - ply * 10;
+    if (score < -Search::MateScore + Search::MaxPly * 10)
+        return score + ply * 10;
     return score;
 }
 
@@ -827,6 +827,12 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     }
     NodeRepGuard repGuard(nodeKey);
 
+    // 50-move rule check
+    if (board.getHalfmoveClock() >= 100)
+    {
+        return 0;
+    }
+
     //--------------------------------------------------
     // Transposition Table probe
     //--------------------------------------------------
@@ -916,10 +922,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
     // Sprawdź zegar osobno, aby po 100 półruchach nie przejść do quiescence,
     // które mogłoby zwrócić niezerową ocenę materiału.
-    if (board.getHalfmoveClock() >= 100)
-    {
-        return 0;
-    }
+    
+
 
     //--------------------------------------------------
     // Quiescence search at leaf nodes
@@ -1199,8 +1203,7 @@ int Search::terminalScore(
             // Mat: strona do ruchu jest zamatowana. Każdy półruch do mata
             // Mat w 1 ma wartość bazową 300000; każdy kolejny półruch
             // do mata obniża ją o 10 punktów.
-            const int mateDistance = (ply > 0) ? (ply - 1) : 0;
-            return -MateScore + (mateDistance * 10);
+            return -MateScore + ply * 10;
         }
 
         // Pat.
