@@ -70,6 +70,13 @@ public:
         MoveList& moveList,
         const MoveValidator::CheckInfo& checkInfo);
 
+    // Ataki gońców, wież i hetmanów z pominięciem pionków przeciwnika.
+    // Wynik to pola tych ataków zajęte przez własne pionki i służy wyłącznie
+    // do oceny PieceBlocker, nigdy do wyszukiwania legalnych ruchów.
+    static void generatePieceBlockerMoves(
+        const Bitboards& bitboards,
+        Bitboard blockedSquares[2]);
+
 private:
 
     static void generatePawnMoves(

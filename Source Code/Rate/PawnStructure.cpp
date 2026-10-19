@@ -15,46 +15,19 @@
 #include "Foundation/Bitboard.h"
 #include "Foundation/Bitboards.h"
 #include "Foundation/Board.h"
-#include "Move/AttackTables.h"
-
-namespace
-{
-
-inline Piece pawnFor(ChessColor color)
-{
-    return color == ChessColor::White ? Piece::WhitePawn : Piece::BlackPawn;
-}
-
-}
 
 int PawnStructureEvaluation::PieceBlocker(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
 /*
  * This is part of MissingPawn.
  */
-    const int ownIdx = Bitboards::indexOf(color);
-    const int enemyIdx = 1 - ownIdx;
-
-    int score = 0;
-
-    // A blocker is valuable only when it actually occupies a square that
-    // matters to an enemy piece. Do not count every square behind a pawn.
-    const Bitboard enemyPieces = bitboards.occupied[enemyIdx]
-        & ~bitboards.pawns[enemyIdx]
-        & ~bitboards.kings[enemyIdx];
-    const Bitboard ownPawns = bitboards.pawns[ownIdx];
-
-    Bitboard pieces = enemyPieces;
-    while (pieces)
-    {
-        const Square sq = popLeastSignificantBit(pieces);
-        const Bitboard attacks = AttackTables::pieceAttacks(
-            board.pieceAt(sq), sq, bitboards.allOccupied);
-        // One small bonus per pawn that restricts the piece, capped per piece.
-        score += std::min(3, countBits(attacks & ownPawns));
-    }
-
-    return std::min(score, 24);
+    (void)board;
+    const int enemyIdx = 1 - Bitboards::indexOf(color);
+    const Bitboard blockedAttacks = bitboards.bishopBlockedSquares[enemyIdx]
+        | bitboards.rookBlockedSquares[enemyIdx]
+        | bitboards.queenBlockedSquares[enemyIdx]
+        | bitboards.pawnBlockers[enemyIdx];
+    return std::min(countBits(blockedAttacks), 24);
 }
 
 int PawnStructureEvaluation::PawnFear(const Board& board, const Bitboards& bitboards, ChessColor color)

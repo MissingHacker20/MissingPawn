@@ -36,6 +36,14 @@ struct Bitboards
     Bitboard rookAttacks[2];
     Bitboard queenAttacks[2];
 
+    // Pola dostępne dla suwaków po pominięciu pionków przeciwnika, lecz
+    // niedostępne przy obecnej zajętości. Własne figury nie są celami.
+    Bitboard bishopBlockedSquares[2];
+    Bitboard rookBlockedSquares[2];
+    Bitboard queenBlockedSquares[2];
+    // Pionki przeciwnika trafione przez promienie suwaków.
+    Bitboard pawnBlockers[2];
+
     // Figury szachujące króla koloru / figury przypięte króla koloru
     Bitboard checkers[2];
     Bitboard pinned[2];

@@ -65,6 +65,45 @@ Bitboards Bitboards::computeHeavy(const Board& board)
         bb.checkers[c] = info.checkers;
         bb.pinned[c] = info.pinned;
     }
+
+    const Bitboard allPawns = bb.pawns[0] | bb.pawns[1];
+    const Bitboard allSliders = bb.bishops[0] | bb.bishops[1]
+        | bb.rooks[0] | bb.rooks[1] | bb.queens[0] | bb.queens[1];
+
+    if (allPawns && allSliders)
+    {
+        for (int c = 0; c < 2; ++c)
+        {
+            const int enemy = 1 - c;
+            const Bitboard rayOccupancy = bb.allOccupied & ~allPawns;
+            const Bitboard ownNonPawns = bb.occupied[c] & ~bb.pawns[c];
+
+            const auto collectBlockedSquares = [&](Piece piece, Bitboard sliders, Bitboard& blockedSquares)
+            {
+                while (sliders)
+                {
+                    const Square from = popLeastSignificantBit(sliders);
+                    const Bitboard hypotheticalAttacks =
+                        AttackTables::pieceAttacks(piece, from, rayOccupancy);
+                    const Bitboard currentMoves =
+                        AttackTables::pieceAttacks(piece, from, bb.allOccupied) & ~bb.occupied[c];
+
+                    blockedSquares |= hypotheticalAttacks & ~currentMoves & ~ownNonPawns;
+                    bb.pawnBlockers[c] |= hypotheticalAttacks & bb.pawns[enemy];
+                }
+            };
+
+            collectBlockedSquares(
+                c == 0 ? Piece::WhiteBishop : Piece::BlackBishop,
+                bb.bishops[c], bb.bishopBlockedSquares[c]);
+            collectBlockedSquares(
+                c == 0 ? Piece::WhiteRook : Piece::BlackRook,
+                bb.rooks[c], bb.rookBlockedSquares[c]);
+            collectBlockedSquares(
+                c == 0 ? Piece::WhiteQueen : Piece::BlackQueen,
+                bb.queens[c], bb.queenBlockedSquares[c]);
+        }
+    }
     return bb;
 }
 

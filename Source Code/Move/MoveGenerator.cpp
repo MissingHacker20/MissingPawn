@@ -182,6 +182,15 @@ namespace
     }
 }
 
+void MoveGenerator::generatePieceBlockerMoves(const Bitboards& bitboards,
+                                               Bitboard blockedSquares[2])
+{
+    for (int color = 0; color < 2; ++color)
+        blockedSquares[color] = bitboards.bishopBlockedSquares[color]
+            | bitboards.rookBlockedSquares[color]
+            | bitboards.queenBlockedSquares[color];
+}
+
 void MoveGenerator::generateMoves(const Board &board, MoveList &moves,
                                   const MoveValidator::CheckInfo &)
 {

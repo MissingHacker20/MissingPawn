@@ -240,13 +240,14 @@ bool Search::enterNode(uint64_t zobristKey)
             ++historyCount;
     }
 
-    if (historyCount >= 2)
+    // Jeśli pozycja pojawiła się już trzy razy w historii gry (włącznie z aktualną),
+    // to jest remis przez powtórzenie.
+    if (historyCount >= 3)
+    {
         return true;
+    }
 
-    // Powrót do pozycji z korzenia wyszukiwania wewnątrz drzewa (ply >= 1)
-    if (!repetitionHistory.empty() && zobristKey == repetitionHistory.back())
-        return true;
-
+    // Nie znaleziono powtórzenia - dodaj pozycję do ścieżki i kontynuuj.
     repetitionPath.push_back(zobristKey);
     return false;
 }
@@ -280,8 +281,9 @@ bool Search::shouldStopSearch()
 Move Search::findBestMove(Board& board, int depth)
 {
     searchStartTime = std::chrono::steady_clock::now();
-
     TimeManager::resetNodeCount();
+    TimeManager::resetTimeCheckCounter();
+    TimeManager::start();
 
     // Initialize evaluation for this position
     board.recomputeEval();
@@ -310,10 +312,6 @@ Move Search::findBestMove(Board& board, int depth)
     //--------------------------------------------------
     repetitionHistory = GameHistory::getPositions();
     repetitionPath.clear();
-
-    //--------------------------------------------------
-    // Szybka ścieżka: wymuszenie ruchu / mat w 1
-    //--------------------------------------------------
 
     MoveList rootMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
@@ -412,9 +410,10 @@ Move Search::findBestMove(Board& board, int depth)
         int alpha = -Infinity;
         int beta = Infinity;
 
-for (int index = 0; index < moves.size(); ++index)
+        for (int index = 0; index < moves.size(); ++index)
         {
-            if (shouldStopSearch())
+            bool stop = shouldStopSearch();
+            if (stop)
             {
                 break;
             }
@@ -423,7 +422,7 @@ for (int index = 0; index < moves.size(); ++index)
             UndoInfo undoInfo;
             board.makeMove(move, undoInfo);
             TimeManager::incrementNodeCount();
-
+            
             int score;
 
             if (index == 0)

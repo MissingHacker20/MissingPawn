@@ -929,8 +929,8 @@ void Board::makeNullMove(
         zobristKey ^= Zobrist::getSideKey(ChessColor::Black);
     }
 
-    // Null move just changes side to move, eval is negated
-    evalScore = -evalScore;
+    // Evaluation is stored from White's perspective. A null move changes
+    // only the side to move, so the absolute evaluation remains unchanged.
 }
 
 void Board::undoNullMove(
