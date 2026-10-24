@@ -100,13 +100,19 @@ int scoreFromTT(int score, int ply)
 
 bool safeForNullMove(const Board& board, ChessColor side)
 {
-    const Piece rook = side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook;
     const Piece queen = side == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen;
-    const bool hasMajor = board.getBitboard(rook) != 0 || board.getBitboard(queen) != 0;
-
+    const bool hasQueen = board.getBitboard(queen) != 0;
     // Null move is unreliable in sparse minor/pawn endings: zugzwang is common
     // and passing is not a realistic realistic option there.
-    return hasMajor || nonPawnMaterialCount(board) >= 4;
+    // Even with a rook/queen, pawn endings with only one minor piece can
+    // exhibit zugzwang. Require a meaningful amount of non-pawn material on
+    // both sides unless the position still has a queen.
+    const bool hasRook = board.getBitboard(
+        side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook) != 0;
+    const int nonPawnMaterial = nonPawnMaterialCount(board);
+    // Null move is unreliable in sparse endings: zugzwang is common. A queen
+    // is enough material to make it safe; rook endings require extra material.
+    return hasQueen || (hasRook && nonPawnMaterial >= 4) || nonPawnMaterial >= 6;
 }
 
 // Reconstruct PV from transposition table by following bestMove chain.
@@ -422,7 +428,7 @@ Move Search::findBestMove(Board& board, int depth)
             UndoInfo undoInfo;
             board.makeMove(move, undoInfo);
             TimeManager::incrementNodeCount();
-            
+
             int score;
 
             if (index == 0)
@@ -593,17 +599,51 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         ~QRepGuard() { if (active) Search::exitNode(k); }
     } qGuard{nodeKey, needExit};
 
+    pvLength[ply] = 0;
+    const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+    const MoveValidator::CheckInfo pseudoInfo{};
+    MoveList moves;
+
+    if (inCheck)
+    {
+        MoveGenerator::generateMoves(board, moves, pseudoInfo);
+        if (moves.size() == 0)
+        {
+            return -MateScore + ply * 10;
+        }
+
+        if (board.getHalfmoveClock() >= 100)
+        {
+            return 0;
+        }
+    }
+    else
+    {
+        if (board.getHalfmoveClock() >= 100)
+        {
+            return 0;
+        }
+
+        MoveGenerator::generateLegalCaptures(board, moves, pseudoInfo);
+        if (moves.size() == 0)
+        {
+            MoveList legalMoves;
+            MoveGenerator::generateMoves(board, legalMoves, pseudoInfo);
+            if (legalMoves.size() == 0)
+            {
+                return 0;
+            }
+        }
+    }
+
     //--------------------------------------------------
     // Transposition Table probe in quiescence
     //--------------------------------------------------
     TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
     Move ttMove{};
 
-    // A quiescence node can contribute captures to the PV.  Reset its row
-    // here because qsearch may be entered more than once for the same ply
-    // during a PVS/LMR re-search.
-    pvLength[ply] = 0;
-
+    // Qsearch may be entered more than once for the same ply during a
+    // PVS/LMR re-search, so start with a clean PV row.
     if (ttEntry && ttEntry->depth == 0)
     {
         ttMove = ttEntry->bestMove;
@@ -627,25 +667,6 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         {
             return ttScore;
         }
-    }
-
-    const bool inCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
-    const MoveValidator::CheckInfo pseudoInfo{};
-
-    MoveList moves;
-    if (inCheck)
-    {
-        MoveGenerator::generateMoves(board, moves, pseudoInfo);
-        if (moves.size() == 0)
-        {
-            // QSearch nie ma stand-pat w szachu: brak legalnej odpowiedzi
-            // oznacza mata, nie ocenę statyczną równą zero.
-            return -MateScore + ply * 10;
-        }
-    }
-    else
-    {
-        MoveGenerator::generateLegalCaptures(board, moves, pseudoInfo);
     }
 
     // SEE i delta pruning są liczone tylko dla konkretnych bić poniżej;
@@ -687,15 +708,10 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
             break;
         }
 
-        if (shouldStopSearch())
-        {
-            completed = false;
-            break;
-        }
-
         const Move& move = moves[i];
 
-        // Delta pruning: depth-dependent margins, protect rooks/queens
+        // Delta pruning: disable in-check as above and never prune promotions,
+        // since the promotion gain is not represented by capturedPiece.
         int pieceValue = 0;
         switch (move.capturedPiece)
         {
@@ -707,13 +723,14 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         default: pieceValue = 0; break;
         }
 
-        // Delta margins are expressed in milipawns.
-        int deltaMargin = 2000 - std::min(ply, 12) * 120;
-        deltaMargin = std::max(deltaMargin, 500);
+        // Delta margins are expressed in milipawns. Promotions are forcing
+        // tactical moves whose material gain is not reflected in pieceValue.
+        const bool isPromotion = move.flag >= MoveFlag::PromotionKnight &&
+            move.flag <= MoveFlag::PromotionCaptureQueen;
+        const int deltaMargin = std::max(2000 - std::min(ply, 12) * 120, 500);
 
-        // Don't prune rook/queen captures (value >= 5000)
-        // For minor pieces, use depth-dependent margin
-        if (!inCheck && pieceValue < 5000 &&
+        // Keep major-piece captures and all promotions in the qsearch tree.
+        if (!inCheck && !isPromotion && pieceValue < 5000 &&
             standPat + pieceValue + deltaMargin < alpha)
         {
             continue;
@@ -740,6 +757,12 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         const int score = -quiesce(board, -beta, -alpha, childPly);
 
         board.undoMove(move, undoInfo);
+
+        if (shouldStopSearch())
+        {
+            completed = false;
+            break;
+        }
 
         if (score > alpha)
         {
@@ -826,9 +849,19 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     }
     NodeRepGuard repGuard(nodeKey);
 
-    // 50-move rule check
+    // A checkmate takes precedence over a draw claim at the 50-move limit.
     if (board.getHalfmoveClock() >= 100)
     {
+        if (MoveValidator::isKingInCheck(board, board.getSideToMove()))
+        {
+            const MoveValidator::CheckInfo pseudoInfo{};
+            MoveList evasions;
+            MoveGenerator::generateMoves(board, evasions, pseudoInfo);
+            if (evasions.size() == 0)
+            {
+                return -MateScore + ply * 10;
+            }
+        }
         return 0;
     }
 
@@ -921,7 +954,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
     // Sprawdź zegar osobno, aby po 100 półruchach nie przejść do quiescence,
     // które mogłoby zwrócić niezerową ocenę materiału.
-    
+
 
 
     //--------------------------------------------------
@@ -952,6 +985,11 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         board.undoNullMove(nullUndo);
 
+        if (shouldStopSearch())
+        {
+            return 0;
+        }
+
         if (nullScore >= beta)
         {
             // Null move can overestimate positions where passing is almost
@@ -966,10 +1004,19 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                     -beta,
                     -beta + 1,
                     ply + 1);
-                if (verificationScore < beta)
-                    return verificationScore;
+                if (shouldStopSearch())
+                {
+                    return 0;
+                }
+                if (verificationScore >= beta)
+                {
+                    return beta;
+                }
             }
-            return beta;
+            else
+            {
+                return beta;
+            }
         }
     }
 
@@ -1083,6 +1130,12 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
 
         board.undoMove(move, undoInfo);
 
+        if (shouldStopSearch())
+        {
+            completed = false;
+            break;
+        }
+
         // Verification search: if we captured a high-value piece (rook/queen)
         // but the score failed low, re-search with +1 depth to verify
         // there isn't a tactical refutation we missed at reduced depth.
@@ -1105,6 +1158,11 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
                 int verifyScore = -negamax(board, depth, -beta, -alpha, ply + 1);
                 board.undoMove(move, verifyUndo);
                 score = verifyScore;
+                if (shouldStopSearch())
+                {
+                    completed = false;
+                    break;
+                }
             }
         }
 

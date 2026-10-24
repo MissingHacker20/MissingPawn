@@ -28,16 +28,24 @@
 - improved move ordering and history heuristic
 - improved move validation
 - improved time management
-- millipawn evaluation
+- **[E]** millipawn evaluation
 - new bitboards
 - new UCI options and book command
+- **[E]** pawn evaluator update
 - tactical evaluation
 - updated move generator
 
 ## MissingPawn v3
-- move generation update
+- **[E]** evaluator update
+- big search update
+- improved move generation and validation
+- improved search control
 - transposition table
-- search update
-- pawn evaluation update
-- If-Else Maks System
 - new license (GPL v3)
+- **[E]** pawns structures update
+- Texel tuning
+- UCI parsing/error handling
+
+# Legend:
+
+**[E]** — Experimental feature. See [Experimental.md](Experimental.md) for details.
