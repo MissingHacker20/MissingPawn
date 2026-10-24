@@ -73,21 +73,33 @@ bool bishopQueenBattery(const Bitboards& b, ChessColor color, Square bishop)
 }
 }
 
-int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
+std::pair<int, int> BishopEvaluation::evaluatePair(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 3300;
-    constexpr int BishopPairBonusMG = 280;
-    constexpr int BishopPairBonusEG = 180;
-    constexpr int FianchettoBonus = 80;
-    constexpr int LongDiagBonus = 40;
-    constexpr int CenterBonusMG = 120;
-    constexpr int CenterBonusEG = 80;
-    // EG mobility ~70% of MG
-    static constexpr int mobilityMG[14] = {-20,-10,0,10,20,35,55,80,105,130,155,180,205,230};
-    static constexpr int mobilityEG[14] = {-14,-7,0,7,14,25,39,56,74,91,109,126,144,161};
+    constexpr int MaterialMG = 3470;
+    constexpr int MaterialEG = 3475;
+    constexpr int BishopPairBonusMG = 406;
+    constexpr int BishopPairBonusEG = 268;
+    constexpr int BishopPairOpenSquareBonusMG = 36;
+    constexpr int BishopPairOpenSquareBonusEG = 5;
+    constexpr int FianchettoBonusMG = 161;
+    constexpr int FianchettoBonusEG = 54;
+    constexpr int LongDiagBonusMG = 117;
+    constexpr int LongDiagBonusEG = 122;
+    constexpr int CenterBonusMG = 198;
+    constexpr int CenterBonusEG = 162;
+    constexpr int CenterDistanceWeightMG = 8;
+    constexpr int CenterDistanceWeightEG = 0;
+    constexpr int BishopBatteryBonusMG = 128;
+    constexpr int BishopBatteryBonusEG = 112;
+    constexpr int BishopMobilityMaxMG = 13;
+    constexpr int BishopMobilityMaxEG = 13;
+    // Mobility is tuned independently for middlegame and endgame.
+    static constexpr int mobilityMG[14] = {-104,-94,-51,-29,62,114,132,160,183,203,216,238,216,249};
+    static constexpr int mobilityEG[14] = {-72,-74,-66,-55,-37,79,101,138,146,169,175,198,161,197};
 
     const int idx = Bitboards::indexOf(color);
-    int score = 0;
+    int mgScore = 0;
+    int egScore = 0;
     int count = 0;
 
     Bitboard bishops = bitboards.bishops[idx];
@@ -100,35 +112,47 @@ int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboard
         const int file = index % 8;
         const int rank = index / 8;
 
-        score += Material;
+        mgScore += MaterialMG;
+        egScore += MaterialEG;
 
         // Aktywność zależy od faktycznej mobilności, a nie samej geometrii.
         const int mobility = countBishopMobility(bitboards, color, square);
-        const int phase = Evaluation::gamePhase(bitboards);
-        const int m = std::min(mobility, 13);
-        score += (mobilityMG[m] * phase + mobilityEG[m] * (24 - phase)) / 24;
+        const int mobilityMGIndex = std::min(mobility, BishopMobilityMaxMG);
+        const int mobilityEGIndex = std::min(mobility, BishopMobilityMaxEG);
+        mgScore += mobilityMG[mobilityMGIndex];
+        egScore += mobilityEG[mobilityEGIndex];
 
         // Fianchetto
         if (isFianchetto(bitboards, color, file, rank))
         {
-            score += FianchettoBonus;
+            mgScore += FianchettoBonusMG;
+            egScore += FianchettoBonusEG;
         }
 
         // Długa diagonala
         if (isLongDiagonalBishop(file, rank))
         {
-            score += LongDiagBonus;
+            mgScore += LongDiagBonusMG;
+            egScore += LongDiagBonusEG;
         }
 
         // Centrum - delikatny bonus za bliskość centrum
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        const int centerMG = CenterBonusMG - static_cast<int>(centerDist * 20);
-        const int centerEG = CenterBonusEG - static_cast<int>(centerDist * 15);
-        if (centerMG > 0) score += (centerMG * phase + centerEG * (24 - phase)) / 24;
+        const int centerMG = CenterBonusMG - static_cast<int>(centerDist * CenterDistanceWeightMG);
+        const int centerEG = CenterBonusEG - static_cast<int>(centerDist * CenterDistanceWeightEG);
+        if (centerMG > 0)
+        {
+            mgScore += centerMG;
+            egScore += centerEG;
+        }
 
         // Fianchetto i długa przekątna są tylko potencjałem; mobility powyżej
         // pokazuje, czy goniec rzeczywiście jest aktywny.
-        if (bishopQueenBattery(bitboards, color, square) && mobility >= 5) score += 60;
+        if (bishopQueenBattery(bitboards, color, square) && mobility >= 5)
+        {
+            mgScore += BishopBatteryBonusMG;
+            egScore += BishopBatteryBonusEG;
+        }
     }
 
     // Para gońców
@@ -136,11 +160,18 @@ int BishopEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboard
     {
         // Para jest silniejsza w otwartej pozycji.
         const int openSquares = 64 - countBits(bitboards.allOccupied);
-        const int pairMG = BishopPairBonusMG + std::min(120, openSquares * 2);
-        const int pairEG = BishopPairBonusEG + std::min(160, openSquares * 3);
-        const int phase = Evaluation::gamePhase(bitboards);
-        score += (pairMG * phase + pairEG * (24 - phase)) / 24;
+        const int pairMG = BishopPairBonusMG + std::min(120, openSquares * BishopPairOpenSquareBonusMG);
+        const int pairEG = BishopPairBonusEG + std::min(160, openSquares * BishopPairOpenSquareBonusEG);
+        mgScore += pairMG;
+        egScore += pairEG;
     }
 
-    return score;
+    return {mgScore, egScore};
+}
+
+int BishopEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    const auto [mg, eg] = evaluatePair(board, bitboards, color);
+    const int phase = Evaluation::gamePhase(bitboards);
+    return (mg * phase + eg * (24 - phase)) / 24;
 }

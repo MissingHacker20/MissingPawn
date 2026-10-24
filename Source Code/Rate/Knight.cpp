@@ -84,21 +84,30 @@ bool isKnightOnEdge(int file, int rank)
 }
 }
 
-int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+std::pair<int, int> KnightEvaluation::evaluatePair(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 3200;
-    constexpr int CenterBonusMax = 180;
-    constexpr int EdgePenalty = 120;
-    constexpr int OutpostBonusMG = 250;
-    constexpr int OutpostBonusEG = 350;
-    constexpr int MobBonusPerSquareMG = 40;
-    constexpr int MobBonusPerSquareEG = 28;
-    constexpr int MobMax = 400;
-    constexpr int ConnectedKnightsBonus = 80;
+    constexpr int MaterialMG = 3387;
+    constexpr int MaterialEG = 3272;
+    constexpr int CenterBonusMaxMG = 271;
+    constexpr int CenterBonusMaxEG = 277;
+    constexpr int EdgePenaltyMG = 55;
+    constexpr int EdgePenaltyEG = 4;
+    constexpr int OutpostBonusMG = 324;
+    constexpr int OutpostBonusEG = 263;
+    constexpr int MobBonusPerSquareMG = 129;
+    constexpr int MobBonusPerSquareEG = 43;
+    constexpr int MobMaxMG = 400;
+    constexpr int MobMaxEG = 400;
+    constexpr int MobilityFloorMG = 50;
+    constexpr int MobilityFloorEG = 50;
+    constexpr int CenterDistanceWeightMG = 0;
+    constexpr int CenterDistanceWeightEG = 61;
+    constexpr int ConnectedKnightsBonusMG = 170;
+    constexpr int ConnectedKnightsBonusEG = 138;
 
     const int idx = Bitboards::indexOf(color);
-    const int phase = Evaluation::gamePhase(bitboards);
-    int score = 0;
+    int mgScore = 0;
+    int egScore = 0;
     int knightCount = 0;
 
     Bitboard knights = bitboards.knights[idx];
@@ -111,30 +120,42 @@ int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, C
         const int file = index % 8;
         const int rank = index / 8;
 
-        score += Material;
+        mgScore += MaterialMG;
+        egScore += MaterialEG;
 
         const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += CenterBonusMax - static_cast<int>(centerDist * 35);
+        mgScore += CenterBonusMaxMG - static_cast<int>(centerDist * CenterDistanceWeightMG);
+        egScore += CenterBonusMaxEG - static_cast<int>(centerDist * CenterDistanceWeightEG);
 
         if (isKnightOnEdge(file, rank))
         {
-            score -= EdgePenalty;
+            mgScore -= EdgePenaltyMG;
+            egScore -= EdgePenaltyEG;
         }
 
         if (isKnightOutpost(board, bitboards, color, file, rank))
         {
-            score += (OutpostBonusMG * phase + OutpostBonusEG * (24 - phase)) / 24;
+            mgScore += OutpostBonusMG;
+            egScore += OutpostBonusEG;
         }
 
         const int mobility = countKnightMobility(bitboards, color, square);
-        const int mobBonus = (MobBonusPerSquareMG * phase + MobBonusPerSquareEG * (24 - phase)) / 24;
-        score += std::max(0, std::min(mobility * mobBonus, MobMax) - 50);
+        mgScore += std::max(0, std::min(mobility * MobBonusPerSquareMG, MobMaxMG) - MobilityFloorMG);
+        egScore += std::max(0, std::min(mobility * MobBonusPerSquareEG, MobMaxEG) - MobilityFloorEG);
     }
 
     if (knightCount >= 2)
     {
-        score += ConnectedKnightsBonus;
+        mgScore += ConnectedKnightsBonusMG;
+        egScore += ConnectedKnightsBonusEG;
     }
 
-    return score;
+    return {mgScore, egScore};
+}
+
+int KnightEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    const auto [mg, eg] = evaluatePair(board, bitboards, color);
+    const int phase = Evaluation::gamePhase(bitboards);
+    return (mg * phase + eg * (24 - phase)) / 24;
 }

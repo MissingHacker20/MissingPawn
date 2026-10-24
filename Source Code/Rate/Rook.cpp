@@ -117,7 +117,7 @@ bool areRooksConnected(const Bitboards& bitboards, ChessColor color)
 }
 
 // Sprawdza czy wieża odcina króla przeciwnika (cut-off)
-int rookCutOffBonus(const Bitboards& bitboards, ChessColor color, int rookFile, int rookRank)
+int rookCutOffLevel(const Bitboards& bitboards, ChessColor color, int rookFile, int rookRank)
 {
     const int enemyIdx = 1 - Bitboards::indexOf(color);
     Bitboard enemyKingBB = bitboards.kings[enemyIdx];
@@ -174,31 +174,31 @@ int rookCutOffBonus(const Bitboards& bitboards, ChessColor color, int rookFile, 
     }
 
     int totalCutOff = std::max(ranksCutOff, filesCutOff);
-    if (totalCutOff >= 3) return 220;
-    if (totalCutOff >= 2) return 150;
+    if (totalCutOff >= 3) return 3;
+    if (totalCutOff >= 2) return 2;
     return 0;
 }
 }
 
-int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+static std::pair<int, int> calculateRookScorePair(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 5000;
-    constexpr int OpenFileBonusMG = 180;
-    constexpr int OpenFileBonusEG = 180;
-    constexpr int SemiOpenFileBonusMG = 100;
-    constexpr int SemiOpenFileBonusEG = 100;
-    constexpr int SeventhRankBonusMG = 200;
-    constexpr int SeventhRankBonusEG = 200;
-    constexpr int KingFileBonusMG = 60;
-    constexpr int KingFileBonusEG = 60;
-    constexpr int RooksConnectedBonus = 100;
-    constexpr int VulnerableToMinorOrPawnPenalty = 100;
+    constexpr int MaterialMG = 5192, MaterialEG = 5194;
+    constexpr int OpenFileBonusMG = 273, OpenFileBonusEG = 275;
+    constexpr int SemiOpenFileBonusMG = 185, SemiOpenFileBonusEG = 131;
+    constexpr int SeventhRankBonusMG = 271, SeventhRankBonusEG = 281;
+    constexpr int KingFileBonusMG = 119, KingFileBonusEG = 134;
+    constexpr int RooksConnectedBonusMG = 180, RooksConnectedBonusEG = 180;
+    constexpr int RookQueenBatteryBonusMG = 179, RookQueenBatteryBonusEG = 178;
+    constexpr int PassedPawnSupportBonusMG = 145, PassedPawnSupportBonusEG = 333;
+    constexpr int VulnerableToMinorOrPawnPenaltyMG = 8, VulnerableToMinorOrPawnPenaltyEG = 6;
+    constexpr int RookCutoffMediumBonusMG = 150, RookCutoffMediumBonusEG = 150;
+    constexpr int RookCutoffStrongBonusMG = 281, RookCutoffStrongBonusEG = 293;
 
     const int idx = Bitboards::indexOf(color);
     const int seventhRank = color == ChessColor::White ? 6 : 1;
 
-    const int phase = Evaluation::gamePhase(bitboards);
-    int score = 0;
+    int mgScore = 0;
+    int egScore = 0;
     int rookCount = 0;
 
     Bitboard rooks = bitboards.rooks[idx];
@@ -211,7 +211,8 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
 
         ++rookCount;
 
-        score += Material;
+        mgScore += MaterialMG;
+        egScore += MaterialEG;
 
         // Linie otwarte i półotwarte
         const int ownPawnsOnFile = countPawnsOnFile(bitboards, color, file);
@@ -221,52 +222,83 @@ int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, Che
             const ChessColor enemyColor = (color == ChessColor::White) ? ChessColor::Black : ChessColor::White;
             const int enemyPawnsOnFile = countPawnsOnFile(bitboards, enemyColor, file);
             if (enemyPawnsOnFile == 0)
-                score += (OpenFileBonusMG * phase + OpenFileBonusEG * (24 - phase)) / 24;
+            {
+                mgScore += OpenFileBonusMG;
+                egScore += OpenFileBonusEG;
+            }
             else
-                score += (SemiOpenFileBonusMG * phase + SemiOpenFileBonusEG * (24 - phase)) / 24;
+            {
+                mgScore += SemiOpenFileBonusMG;
+                egScore += SemiOpenFileBonusEG;
+            }
         }
 
         // Siódmy rząd
         if (rank == seventhRank)
         {
-            score += (SeventhRankBonusMG * phase + SeventhRankBonusEG * (24 - phase)) / 24;
+            mgScore += SeventhRankBonusMG;
+            egScore += SeventhRankBonusEG;
         }
 
         // Atak na króla przeciwnika
         if (rookOnKingFile(board, color, file))
         {
-            score += (KingFileBonusMG * phase + KingFileBonusEG * (24 - phase)) / 24;
+            mgScore += KingFileBonusMG;
+            egScore += KingFileBonusEG;
         }
         if (rookBehindPassedPawn(bitboards, color, file, rank))
         {
-            score += (80 * phase + 250 * (24 - phase)) / 24;
+            mgScore += PassedPawnSupportBonusMG;
+            egScore += PassedPawnSupportBonusEG;
         }
 
-        // Rook cut-off (tylko w EG)
-const int cutOff = rookCutOffBonus(bitboards, color, file, rank);
-    if (cutOff > 0)
-    {
-        // TODO S(150, 220) for RookCutOff
-        // cutOff returns 150 for medium cutoff, 220 for strong cutoff
-        // We scale the MG/EG values proportionally
-        const int mg = cutOff * 150 / 150;  // This is just cutOff, but keeps the pattern clear
-        const int eg = cutOff * 220 / 150;
-        score += (mg * phase + eg * (24 - phase)) / 24;
-    }
+        // Rook cut-off valuation is tapered between explicit MG and EG values.
+        const int cutOffLevel = rookCutOffLevel(bitboards, color, file, rank);
+        if (cutOffLevel >= 3)
+        {
+            mgScore += RookCutoffStrongBonusMG;
+            egScore += RookCutoffStrongBonusEG;
+        }
+        else if (cutOffLevel >= 2)
+        {
+            mgScore += RookCutoffMediumBonusMG;
+            egScore += RookCutoffMediumBonusEG;
+        }
 
         const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
             bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
             bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
-        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty;
-        if (rookQueenBattery(bitboards, color, square)) score += 120;
+        if (getBit(enemyMinorPawn, square))
+        {
+            mgScore -= VulnerableToMinorOrPawnPenaltyMG;
+            egScore -= VulnerableToMinorOrPawnPenaltyEG;
+        }
+        if (rookQueenBattery(bitboards, color, square))
+        {
+            mgScore += RookQueenBatteryBonusMG;
+            egScore += RookQueenBatteryBonusEG;
+        }
     }
 
     // Połączone wieże
     if (rookCount >= 2 && areRooksConnected(bitboards, color))
     {
-        score += RooksConnectedBonus;
+        mgScore += RooksConnectedBonusMG;
+        egScore += RooksConnectedBonusEG;
     }
 
-    return score;
+    return {mgScore, egScore};
+}
+
+std::pair<int, int> RookEvaluation::evaluatePair(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    return calculateRookScorePair(board, bitboards, color);
+}
+
+int RookEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    const auto [mg, eg] = evaluatePair(board, bitboards, color);
+    const int phase = Evaluation::gamePhase(bitboards);
+    return (mg * phase + eg * (24 - phase)) / 24;
 }

@@ -11,7 +11,6 @@
 #include "Rate/Queen.h"
 #include "Rate/Evaluation.h"
 
-#include <cstdlib>
 #include <algorithm>
 
 #include "Move/AttackTables.h"
@@ -20,6 +19,18 @@
 
 namespace
 {
+constexpr int QueenMaterialMG = 9180;
+constexpr int QueenMaterialEG = 9179;
+constexpr int EarlyQueenPenaltyMG = 45;
+constexpr int EarlyQueenPenaltyEG = 95;
+constexpr int QueenMobilityPerSquareMG = 45;
+constexpr int QueenMobilityPerSquareEG = 95;
+constexpr int QueenMobilityCapMG = 400;
+constexpr int QueenMobilityCapEG = 400;
+constexpr int QueenMobilityOffsetMG = 50;
+constexpr int QueenMobilityOffsetEG = 50;
+constexpr int QueenCenterBonusMG = 158;
+constexpr int QueenCenterBonusEG = 186;
 int countQueenMobility(const Bitboards& bitboards, ChessColor color, Square from)
 {
     Bitboard attacks = AttackTables::queenAttacks(from, bitboards.allOccupied);
@@ -53,50 +64,60 @@ bool queenIsExposedEarly(const Bitboards& bitboards, ChessColor color, Square sq
 }
 }
 
-int QueenEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
+std::pair<int, int> QueenEvaluation::evaluatePair(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-    constexpr int Material = 9000;
-    constexpr int MobBonusPerSquareMG = 12;
-    constexpr int MobBonusPerSquareEG = 8;
-    constexpr int MobMax = 400;
-    constexpr int VulnerableToMinorOrPawnPenalty = 200;
-    constexpr int EarlyQueenPenalty = 100;
+    constexpr int MaterialMG = QueenMaterialMG, MaterialEG = QueenMaterialEG;
+    constexpr int MobBonusPerSquareMG = QueenMobilityPerSquareMG, MobBonusPerSquareEG = QueenMobilityPerSquareEG;
+    constexpr int MobMaxMG = QueenMobilityCapMG, MobMaxEG = QueenMobilityCapEG;
+    constexpr int CenterBonusMG = QueenCenterBonusMG, CenterBonusEG = QueenCenterBonusEG;
+    constexpr int MobilityFloorMG = QueenMobilityOffsetMG, MobilityFloorEG = QueenMobilityOffsetEG;
+    constexpr int VulnerableToMinorOrPawnPenaltyMG = 108, VulnerableToMinorOrPawnPenaltyEG = 116;
+    constexpr int EarlyQueenPenaltyMG = ::EarlyQueenPenaltyMG, EarlyQueenPenaltyEG = ::EarlyQueenPenaltyEG;
 
     const int idx = Bitboards::indexOf(color);
-    const int phase = Evaluation::gamePhase(bitboards);
-    int score = 0;
+    int mgScore = 0;
+    int egScore = 0;
 
     Bitboard queens = bitboards.queens[idx];
     while (queens)
     {
         const Square square = popLeastSignificantBit(queens);
-        const int index = static_cast<int>(square);
-        const int file = index % 8;
-        const int rank = index / 8;
 
-        score += Material;
+        mgScore += MaterialMG;
+        egScore += MaterialEG;
 
-        // Centrum (delikatny bonus)
-        const double centerDist = std::abs(file - 3.5) + std::abs(rank - 3.5);
-        score += 70 - static_cast<int>(centerDist * 12);
+        mgScore += CenterBonusMG;
+        egScore += CenterBonusEG;
 
         // Early development is a problem only when the queen is actually
         // exposed to attack while the minor pieces still block development.
         if (queenIsExposedEarly(bitboards, color, square))
         {
-            score -= EarlyQueenPenalty;
+            mgScore -= EarlyQueenPenaltyMG;
+            egScore -= EarlyQueenPenaltyEG;
         }
 
         const int mobility = countQueenMobility(bitboards, color, square);
-        const int mobBonus = (MobBonusPerSquareMG * phase + MobBonusPerSquareEG * (24 - phase)) / 24;
-        score += std::max(0, std::min(mobility * mobBonus, MobMax) - 50);
+        mgScore += std::max(0, std::min(mobility * MobBonusPerSquareMG, MobMaxMG) - MobilityFloorMG);
+        egScore += std::max(0, std::min(mobility * MobBonusPerSquareEG, MobMaxEG) - MobilityFloorEG);
 
         const ChessColor enemy = color == ChessColor::White ? ChessColor::Black : ChessColor::White;
         const Bitboard enemyMinorPawn = bitboards.pawnAttacks[Bitboards::indexOf(enemy)] |
             bitboards.knightAttacks[Bitboards::indexOf(enemy)] |
             bitboards.bishopAttacks[Bitboards::indexOf(enemy)];
-        if (getBit(enemyMinorPawn, square)) score -= VulnerableToMinorOrPawnPenalty;
+        if (getBit(enemyMinorPawn, square))
+        {
+            mgScore -= VulnerableToMinorOrPawnPenaltyMG;
+            egScore -= VulnerableToMinorOrPawnPenaltyEG;
+        }
     }
 
-    return score;
+    return {mgScore, egScore};
+}
+
+int QueenEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    const auto [mg, eg] = evaluatePair(board, bitboards, color);
+    const int phase = Evaluation::gamePhase(bitboards);
+    return (mg * phase + eg * (24 - phase)) / 24;
 }

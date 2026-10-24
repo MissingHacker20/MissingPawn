@@ -28,35 +28,19 @@ namespace
 {
 int pstValue(Piece piece, int square, bool endgame)
 {
-    static constexpr int pawnMG[8] = {0, 50, 80, 120, 180, 280, 450, 0};
-    static constexpr int pawnEG[8] = {0, 80, 120, 180, 280, 420, 650, 0};
+    static constexpr int pawnMG[8] = {27,60,-44,-24,54,107,106,27};
+    static constexpr int pawnEG[8] = {206,280,130,103,206,291,294,206};
     // Pełne PST: pole jest parametrem, a nie funkcją odległości od krawędzi.
-    static constexpr int knightMG[64] = {
-        -250,-180,-120,-80,-80,-120,-180,-250, -180,-80,0,40,40,0,-80,-180,
-        -120,0,80,120,120,80,0,-120, -80,40,120,180,180,120,40,-80,
-        -80,40,120,180,180,120,40,-80, -120,0,80,120,120,80,0,-120,
-        -180,-80,0,40,40,0,-80,-180, -250,-180,-120,-80,-80,-120,-180,-250};
-    static constexpr int knightEG[64] = {
-        -150,-100,-60,-40,-40,-60,-100,-150, -100,-40,0,30,30,0,-40,-100,
-        -60,0,40,70,70,40,0,-60, -40,30,70,100,100,70,30,-40,
-        -40,30,70,100,100,70,30,-40, -60,0,40,70,70,40,0,-60,
-        -100,-40,0,30,30,0,-40,-100, -150,-100,-60,-40,-40,-60,-100,-150};
-    static constexpr int bishopMG[64] = {
-        -120,-80,-60,-40,-40,-60,-80,-120, -80,-20,0,20,20,0,-20,-80,
-        -60,0,40,60,60,40,0,-60, -40,20,60,100,100,60,20,-40,
-        -40,20,60,100,100,60,20,-40, -60,0,40,60,60,40,0,-60,
-        -80,-20,0,20,20,0,-20,-80, -120,-80,-60,-40,-40,-60,-80,-120};
-    static constexpr int bishopEG[64] = {
-        -80,-50,-30,-20,-20,-30,-50,-80, -50,-10,10,20,20,10,-10,-50,
-        -30,10,40,50,50,40,10,-30, -20,20,50,70,70,50,20,-20,
-        -20,20,50,70,70,50,20,-20, -30,10,40,50,50,40,10,-30,
-        -50,-10,10,20,20,10,-10,-50, -80,-50,-30,-20,-20,-30,-50,-80};
-    static constexpr int rookMG[8] = {0, 30, 50, 70, 70, 50, 30, 0};
-    static constexpr int rookEG[8] = {80, 100, 120, 140, 140, 120, 100, 80};
-    static constexpr int queenMG[8] = {-80, -20, 30, 60, 60, 30, -20, -80};
-    static constexpr int queenEG[8] = {-40, 0, 40, 70, 70, 40, 0, -40};
-    static constexpr int kingMG[8] = {200, 120, 40, -40, -40, 40, 120, 200};
-    static constexpr int kingEG[8] = {-250, -120, 0, 80, 80, 0, -120, -250};
+    static constexpr int knightMG[64] = {-285,-7,-223,-198,-156,-213,-102,-262,-240,-109,-74,232,207,89,-120,-83,-355,-163,72,107,33,276,38,-315,-121,4,181,248,423,28,115,50,-60,206,62,398,199,207,107,-1,-165,19,112,165,206,186,94,-94,-225,-89,-4,101,120,58,-1,-180,-216,-171,-74,-31,-42,-69,-172,-248};
+    static constexpr int knightEG[64] = {-181,-206,-154,-135,-159,-125,-185,-163,-151,-26,-113,-49,-11,-84,-71,-123,-137,-47,-192,-20,-107,-187,-112,-137,-32,-20,10,44,32,-49,25,-55,-12,54,4,117,11,78,-18,-13,-122,24,69,-20,79,54,63,-113,-113,-1,-48,86,60,-23,-27,-137,-107,-97,17,-22,-11,-21,-103,-171};
+    static constexpr int bishopMG[64] = {-243,-130,-120,-182,-144,-214,-145,-221,-94,-167,39,25,160,-25,96,-120,-201,28,-1,177,83,28,34,-150,-53,66,187,124,198,158,14,-17,-23,207,99,221,164,162,103,-10,129,42,113,118,122,156,108,166,-58,-124,-2,43,52,74,-45,-130,-32,27,-52,20,-18,2,-41,-61};
+    static constexpr int bishopEG[64] = {-219,-116,-244,-144,-119,-251,-88,-138,-91,-189,-50,-62,1,-42,-193,-140,-140,-46,-26,49,19,-118,-38,-75,-20,6,85,79,4,25,-70,-14,42,84,66,66,64,90,28,8,36,8,26,28,58,80,26,65,2,-37,27,-61,-1,45,-6,-101,-22,-13,-79,11,-12,7,-10,-48};
+    static constexpr int rookMG[8] = {66,153,178,176,176,178,153,66};
+    static constexpr int rookEG[8] = {259,255,250,249,249,250,255,259};
+    static constexpr int queenMG[8] = {-339,-342,-276,-181,-181,-276,-342,-339};
+    static constexpr int queenEG[8] = {74,70,60,73,73,60,70,74};
+    static constexpr int kingMG[8] = {37,-97,13,-111,-111,13,-97,37};
+    static constexpr int kingEG[8] = {-489,-126,-69,-118,-118,-69,-126,-489};
     const int file = square % 8;
     const int rank = square / 8;
     switch (piece)
@@ -75,10 +59,17 @@ int pstValue(Piece piece, int square, bool endgame)
     }
 }
 
-int evaluatePst(const Board& board, const Bitboards& b)
+struct ScorePair
 {
-    const int phase = Evaluation::gamePhase(b);
-    int score = 0;
+    int mg = 0;
+    int eg = 0;
+};
+
+
+
+ScorePair evaluatePst(const Board& board, const Bitboards& b)
+{
+    ScorePair score;
 
     // Odwiedzaj wyłącznie zajęte pola. Poza mniejszą liczbą odczytów mailbox
     // zachowujemy dokładnie tę samą orientację PST dla czarnych figur.
@@ -90,7 +81,9 @@ int evaluatePst(const Board& board, const Bitboards& b)
             const int oriented = black ? (square ^ 56) : square;
             const int mg = pstValue(piece, oriented, false);
             const int eg = pstValue(piece, oriented, true);
-            score += (black ? -1 : 1) * (mg * phase + eg * (24 - phase)) / 24;
+            const int sign = black ? -1 : 1;
+            score.mg += sign * mg;
+            score.eg += sign * eg;
         }
     };
 
@@ -110,6 +103,11 @@ int evaluatePst(const Board& board, const Bitboards& b)
     (void)board;
     return score;
 }
+
+int taperedScore(const ScorePair& score, int phase)
+{
+    return (score.mg * phase + score.eg * (24 - phase)) / 24;
+}
 }
 
 int Evaluation::gamePhase(const Bitboards& bitboards)
@@ -126,21 +124,22 @@ int Evaluation::gamePhase(const Bitboards& bitboards)
 
 namespace
 {
-int cachedPawnEvaluation(const Board& board, const Bitboards& bitboards, ChessColor color)
+std::pair<int, int> cachedPawnEvaluation(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    // Disable cache for debugging
-    return PawnEvaluation::evaluate(board, bitboards, color);
+    return PawnEvaluation::evaluatePair(board, bitboards, color);
 }
 
-int evaluateColor(const Board& board, const Bitboards& bitboards, ChessColor color)
+ScorePair evaluateColor(const Board& board, const Bitboards& bitboards, ChessColor color)
 {
-    return cachedPawnEvaluation(board, bitboards, color)
-        + PawnStructureEvaluation::evaluate(board, bitboards, color)
-        + KnightEvaluation::evaluate(board, bitboards, color)
-        + BishopEvaluation::evaluate(board, bitboards, color)
-        + RookEvaluation::evaluate(board, bitboards, color)
-        + QueenEvaluation::evaluate(board, bitboards, color)
-        + KingEvaluation::evaluate(board, bitboards, color);
+    const auto pawn = cachedPawnEvaluation(board, bitboards, color);
+    const auto structure = PawnStructureEvaluation::evaluatePair(board, bitboards, color);
+    const auto knight = KnightEvaluation::evaluatePair(board, bitboards, color);
+    const auto bishop = BishopEvaluation::evaluatePair(board, bitboards, color);
+    const auto rook = RookEvaluation::evaluatePair(board, bitboards, color);
+    const auto queen = QueenEvaluation::evaluatePair(board, bitboards, color);
+    const auto king = KingEvaluation::evaluatePair(board, bitboards, color);
+    return {pawn.first + structure.first + knight.first + bishop.first + rook.first + queen.first + king.first,
+            pawn.second + structure.second + knight.second + bishop.second + rook.second + queen.second + king.second};
 }
 }
 
@@ -156,16 +155,25 @@ int Evaluation::evaluate(const Board& board)
     // każdego koloru.
     const int tactical = TacticsEvaluation::evaluate(board);
 
-    return evaluateColor(board, bitboards, ChessColor::White)
-         - evaluateColor(board, bitboards, ChessColor::Black)
-         + evaluatePst(board, bitboards) + tactical;
+    const int phase = gamePhase(bitboards);
+    const ScorePair white = evaluateColor(board, bitboards, ChessColor::White);
+    const ScorePair black = evaluateColor(board, bitboards, ChessColor::Black);
+    const ScorePair pst = evaluatePst(board, bitboards);
+    const ScorePair total{
+        white.mg - black.mg + pst.mg + tactical,
+        white.eg - black.eg + pst.eg + tactical};
+    return taperedScore(total, phase);
 }
 
 int Evaluation::evaluate(const Board& board, const Bitboards& bitboards)
 {
     const int tactical = TacticsEvaluation::evaluate(board);
-
-    return evaluateColor(board, bitboards, ChessColor::White)
-         - evaluateColor(board, bitboards, ChessColor::Black)
-         + evaluatePst(board, bitboards) + tactical;
+    const int phase = gamePhase(bitboards);
+    const ScorePair white = evaluateColor(board, bitboards, ChessColor::White);
+    const ScorePair black = evaluateColor(board, bitboards, ChessColor::Black);
+    const ScorePair pst = evaluatePst(board, bitboards);
+    const ScorePair total{
+        white.mg - black.mg + pst.mg + tactical,
+        white.eg - black.eg + pst.eg + tactical};
+    return taperedScore(total, phase);
 }

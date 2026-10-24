@@ -171,22 +171,6 @@ bool isPhalanxPawn(const Bitboards& bitboards, ChessColor color, int file, int r
     return false;
 }
 
-bool hasSameFileNeighbor(const Bitboards& bitboards, ChessColor color, int file, int rank)
-{
-    const Bitboard ownPawns = bitboards.pawns[Bitboards::indexOf(color)];
-
-    for (int dr = -1; dr <= 1; dr += 2)
-    {
-        const int r = rank + dr;
-        if (r >= 0 && r < 8 &&
-            getBit(ownPawns, static_cast<Square>(r * 8 + file)))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool isBackwardPawn(const Bitboards& bitboards, ChessColor color, Square square)
 {
     const int idx = Bitboards::indexOf(color);
@@ -396,56 +380,62 @@ bool hasConnectedPassedPawn(const Bitboards& bitboards, ChessColor color, Square
     return false;
 }
 
-// Cheap estimate of a pawn break. It rewards a lever only when the pawn
-// has support and the forward square is not occupied by a friendly pawn.
-int breakPotential(const Bitboards& bitboards, ChessColor color, Square square)
-{
-    if (!isPawnLever(bitboards, color, square)) return 0;
-
-    const int file = fileOf(square);
-    const int rank = rankOf(square);
-    const int step = color == ChessColor::White ? 1 : -1;
-    const int nextRank = rank + step;
-    if (nextRank < 0 || nextRank >= 8) return 0;
-
-    const int own = Bitboards::indexOf(color);
-    const Square forward = static_cast<Square>(nextRank * 8 + file);
-    if (getBit(bitboards.pawns[own], forward)) return 0;
-
-    int score = isPawnProtected(bitboards, color, square) ? 24 : 8;
-    if (isCandidatePassedPawn(bitboards, color, square)) score += 12;
-    return score;
-}
-
 } // namespace
 
-int PawnEvaluation::evaluate(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
+std::pair<int, int> PawnEvaluation::evaluatePair(const Board& /*board*/, const Bitboards& bitboards, ChessColor color)
 {
-constexpr int PassedBonusBaseMG = 60;
-    constexpr int PassedBonusBaseEG = 89;
-    constexpr int CandidatePassedBonusBase = 40;
-    constexpr int ProtectedPassedBonus = 180;
-    constexpr int ConnectedBonus = 35;
-    constexpr int PawnChainBonus = 25;
-    constexpr int PhalanxBonus = 50;
-    constexpr int ProtectedBonus = 25;
-    constexpr int IsolatedPenalty = 75;
-    constexpr int DoubledPenalty = 90;
-    constexpr int TripledPenalty = 190;
-    constexpr int BackwardPenalty = 90;
-    constexpr int IslandPenaltyMG = 30;
-    constexpr int IslandPenaltyEG = 60;
-    constexpr int MajorityBonusMG = 30;
-    constexpr int MajorityBonusEG = 78;
-    constexpr int BreakPotentialBonus = 1;
-    constexpr int LeverBonus = 40;
-    constexpr int CentralBonus = 30;
-    constexpr int ConnectedPassedBonus = 220;
-    constexpr int MutualDefenseBonus = 20;
+    constexpr int PassedBonusBaseMG = 164;
+    constexpr int PassedBonusBaseEG = 244;
+    constexpr int CandidatePassedBonusBaseMG = 0;
+    constexpr int CandidatePassedBonusBaseEG = 5;
+    constexpr int PawnMaterialMG = 992;
+    constexpr int PawnMaterialEG = 1135;
+    constexpr int PassedProgressBonusMG[4] = {191, 360, 559, 750};
+    constexpr int PassedProgressBonusEG[4] = {228, 406, 638, 820};
+    constexpr int PawnProgressPerRankMG = 83;
+    constexpr int PawnProgressPerRankEG = 89;
+    constexpr int CandidatePassedProgressBaseMG = 8;
+    constexpr int CandidatePassedProgressBaseEG = 0;
+    constexpr int MultiplePassedBaseMG = 3;
+    constexpr int MultiplePassedBaseEG = 58;
+    constexpr int PassedPawnLockedPenaltyMG = 120;
+    constexpr int PassedPawnLockedPenaltyEG = 150;
+    constexpr int PassedPawnBlockedPenaltyMG = 89;
+    constexpr int PassedPawnBlockedPenaltyEG = 122;
+    constexpr int ProtectedPassedBonusMG = 100;
+    constexpr int ProtectedPassedBonusEG = 129;
+    constexpr int ConnectedBonusMG = 43;
+    constexpr int ConnectedBonusEG = 0;
+    constexpr int LeverOpportunityWeightMG = 12;
+    constexpr int LeverOpportunityWeightEG = 0;
+    constexpr int PhalanxBonusMG = 131;
+    constexpr int PhalanxBonusEG = 5;
+    constexpr int ProtectedBonusMG = 108;
+    constexpr int ProtectedBonusEG = 0;
+    constexpr int IsolatedPenaltyMG = 80;
+    constexpr int IsolatedPenaltyEG = 0;
+    constexpr int DoubledPenaltyMG = 32;
+    constexpr int DoubledPenaltyEG = 191;
+    constexpr int TripledPenaltyMG = 190;
+    constexpr int TripledPenaltyEG = 193;
+    constexpr int BackwardPenaltyMG = 89;
+    constexpr int BackwardPenaltyEG = 0;
+    constexpr int IslandPenaltyMG = 17;
+    constexpr int IslandPenaltyEG = 0;
+    constexpr int MajorityBonusMG = 89;
+    constexpr int MajorityBonusEG = 144;
+    constexpr int LeverBonusMG = 5;
+    constexpr int LeverBonusEG = 9;
+    constexpr int CentralBonusMG = 16;
+    constexpr int CentralBonusEG = 0;
+    constexpr int ConnectedPassedBonusMG = 141;
+    constexpr int ConnectedPassedBonusEG = 186;
+    constexpr int MutualDefenseBonusMG = 16;
+    constexpr int MutualDefenseBonusEG = 22;
 
     const int idx = Bitboards::indexOf(color);
-    const int phase = Evaluation::gamePhase(bitboards);
-    int score = 0;
+    int mgScore = 0;
+    int egScore = 0;
     std::array<int, 8> pawnsOnFile{};
     int passedCount = 0;
     int connectedPassedCount = 0;
@@ -465,54 +455,60 @@ constexpr int PassedBonusBaseMG = 60;
 
         // Materiał pionka jest stały; zaawansowanie samo w sobie ma tylko
         // niewielką wartość i nie może być doliczane ponownie jako passed pawn.
-        const int pawnMaterial = (1000 * phase + 999 * (24 - phase)) / 24;
-        score += pawnMaterial + progress * 10;
+        mgScore += PawnMaterialMG + progress * PawnProgressPerRankMG;
+        egScore += PawnMaterialEG + progress * PawnProgressPerRankEG;
 
-        if (isCentralPawn(square)) score += CentralBonus;
-        if (protectedPawn) score += ProtectedBonus;
+        if (isCentralPawn(square)) { mgScore += CentralBonusMG; egScore += CentralBonusEG; }
+        if (protectedPawn) { mgScore += ProtectedBonusMG; egScore += ProtectedBonusEG; }
         // Phalanx i connected opisują w dużej mierze ten sam układ. Premia
         // jest celowo mała, aby nie sumować kilku nazw dla jednego faktu.
-        if (isPhalanxPawn(bitboards, color, file, rank)) score += PhalanxBonus / 2;
-        else if (hasNeighborPawn(bitboards, color, file, rank)) score += ConnectedBonus / 2;
+        if (isPhalanxPawn(bitboards, color, file, rank)) { mgScore += PhalanxBonusMG / 2; egScore += PhalanxBonusEG / 2; }
+        else if (hasNeighborPawn(bitboards, color, file, rank)) { mgScore += ConnectedBonusMG / 2; egScore += ConnectedBonusEG / 2; }
 
         if (passedPawn)
         {
             ++passedCount;
-            static constexpr int PassedProgressBonus[8] = {0, 0, 25, 70, 150, 280, 480, 750};
-            const int passedBonusBase = (PassedBonusBaseMG * phase + PassedBonusBaseEG * (24 - phase)) / 24;
-        score += passedBonusBase + PassedProgressBonus[std::min(progress, 7)];
+            const int progressIndex = std::min(progress, 7);
+            mgScore += PassedBonusBaseMG;
+            egScore += PassedBonusBaseEG;
+            if (progressIndex >= 4)
+            {
+                mgScore += PassedProgressBonusMG[progressIndex - 4];
+                egScore += PassedProgressBonusEG[progressIndex - 4];
+            }
             // Zablokowany wolny pion jest znacznie mniej praktycznie wart.
-            if (isLockedPawn(bitboards, color, square)) score -= 120;
+            if (isLockedPawn(bitboards, color, square)) { mgScore -= PassedPawnLockedPenaltyMG; egScore -= PassedPawnLockedPenaltyEG; }
             // A blocker or an unsafe promotion route reduces practical value.
             const int forward = color == ChessColor::White ? 1 : -1;
             const int nextRank = rank + forward;
             if (nextRank >= 0 && nextRank < 8 &&
                 getBit(bitboards.allOccupied, static_cast<Square>(nextRank * 8 + file)))
-                score -= 100;
+            {
+                mgScore -= PassedPawnBlockedPenaltyMG;
+                egScore -= PassedPawnBlockedPenaltyEG;
+            }
             if (protectedPawn)
             {
-                score += ProtectedPassedBonus;
+                mgScore += ProtectedPassedBonusMG;
+                egScore += ProtectedPassedBonusEG;
             }
         }
 
         if (isCandidatePassedPawn(bitboards, color, square))
         {
-            score += CandidatePassedBonusBase + std::max(0, progress - 2) * 30;
+            mgScore += CandidatePassedBonusBaseMG + std::max(0, progress - 2) * CandidatePassedProgressBaseMG;
+            egScore += CandidatePassedBonusBaseEG + std::max(0, progress - 2) * CandidatePassedProgressBaseEG;
         }
 
-        if (isPawnLever(bitboards, color, square)) score += LeverBonus;
-        // Do not reward a locked pawn by itself; reward only an actionable
-        // break opportunity (lever + support + available forward square).
-        score += breakPotential(bitboards, color, square) * BreakPotentialBonus;
-        if (hasSameFileNeighbor(bitboards, color, file, rank)) score += PawnChainBonus / 2;
-
+        if (isPawnLever(bitboards, color, square)) { mgScore += LeverBonusMG; egScore += LeverBonusEG; }
         const int leverOpp = leverOpportunityScore(bitboards, color, square);
         if (leverOpp > 0)
         {
-            score += leverOpp;
+            mgScore += leverOpp * LeverOpportunityWeightMG;
+            egScore += leverOpp * LeverOpportunityWeightEG;
         }
 
-        if (isBackwardPawn(bitboards, color, square)) score -= BackwardPenalty;
+        if (isBackwardPawn(bitboards, color, square)) { mgScore -= BackwardPenaltyMG; egScore -= BackwardPenaltyEG; }
 
         if (hasConnectedPassedPawn(bitboards, color, square))
         {
@@ -524,40 +520,54 @@ constexpr int PassedBonusBaseMG = 60;
     {
         if (pawnsOnFile[file] > 0 && isIsolatedPawn(pawnsOnFile.data(), file))
         {
-            score -= IsolatedPenalty * pawnsOnFile[file];
+            mgScore -= IsolatedPenaltyMG * pawnsOnFile[file];
+            egScore -= IsolatedPenaltyEG * pawnsOnFile[file];
         }
 
         if (pawnsOnFile[file] > 1)
         {
-            score -= DoubledPenalty * (pawnsOnFile[file] - 1);
+            mgScore -= DoubledPenaltyMG * (pawnsOnFile[file] - 1);
+            egScore -= DoubledPenaltyEG * (pawnsOnFile[file] - 1);
         }
 
         if (pawnsOnFile[file] >= 3)
         {
-            score -= TripledPenalty;
+            mgScore -= TripledPenaltyMG;
+            egScore -= TripledPenaltyEG;
         }
     }
 
-    if (passedCount > 1) score += passedCount * 40;
-    score += connectedPassedCount * (ConnectedPassedBonus / 2);
+    if (passedCount > 1)
+    {
+        mgScore += passedCount * MultiplePassedBaseMG;
+        egScore += passedCount * MultiplePassedBaseEG;
+    }
+    mgScore += connectedPassedCount * (ConnectedPassedBonusMG / 2);
+    egScore += connectedPassedCount * (ConnectedPassedBonusEG / 2);
     const int majority = countPawnMajority(bitboards, color);
     if (majority > 0)
     {
-        const int majorityBonus = (MajorityBonusMG * phase + MajorityBonusEG * (24 - phase)) / 24;
-        score += majorityBonus * std::min(3, majority);
+        mgScore += MajorityBonusMG * std::min(3, majority);
+        egScore += MajorityBonusEG * std::min(3, majority);
     }
 
     const int islands = countPawnIslands(pawnsOnFile.data());
     if (islands > 1)
     {
-        const int islandPenalty = (IslandPenaltyMG * phase + IslandPenaltyEG * (24 - phase)) / 24;
-        score -= (islands - 1) * islandPenalty;
+        mgScore -= (islands - 1) * IslandPenaltyMG;
+        egScore -= (islands - 1) * IslandPenaltyEG;
     }
 
     // Ochrona i połączenie są już uwzględnione przy konkretnych pionach;
     // nie doliczamy drugiego bonusu za ten sam fakt strukturalny.
-    if (majority > 1) score += MutualDefenseBonus / 2;
+    if (majority > 1) { mgScore += MutualDefenseBonusMG / 2; egScore += MutualDefenseBonusEG / 2; }
 
-    return score;
+    return {mgScore, egScore};
 }
 
+int PawnEvaluation::evaluate(const Board& board, const Bitboards& bitboards, ChessColor color)
+{
+    const auto [mg, eg] = evaluatePair(board, bitboards, color);
+    const int phase = Evaluation::gamePhase(bitboards);
+    return (mg * phase + eg * (24 - phase)) / 24;
+}

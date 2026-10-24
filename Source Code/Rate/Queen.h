@@ -12,8 +12,11 @@
 
 #include "Foundation/Bitboards.h"
 
+#include <utility>
+
 class QueenEvaluation
 {
 public:
     static int evaluate(const Board& board, const Bitboards& bitboards, ChessColor color);
+    static std::pair<int, int> evaluatePair(const Board& board, const Bitboards& bitboards, ChessColor color);
 };

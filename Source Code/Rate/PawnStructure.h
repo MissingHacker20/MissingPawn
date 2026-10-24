@@ -12,13 +12,15 @@
 
 #include "Foundation/Bitboards.h"
 
+#include <utility>
+
 class PawnStructureEvaluation
 {
 public:
     static int evaluate(const Board& board, const Bitboards& bitboards, ChessColor color);
+    static std::pair<int, int> evaluatePair(const Board& board, const Bitboards& bitboards, ChessColor color);
 
     static int PieceBlocker(const Board& board, const Bitboards& bitboards, ChessColor color);
-    static int PawnFear(const Board& board, const Bitboards& bitboards, ChessColor color);
     static int PieceSpace(const Board& board, const Bitboards& bitboards, ChessColor color);
 
     static Bitboard getAffectedPawns(const Board& board, const Move& move);
