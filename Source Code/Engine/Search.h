@@ -40,9 +40,8 @@ public:
     static void initTranspositionTable(size_t sizeMB = 64);
     static void clearTranspositionTable();
 
-    // Śledzenie powtórzeń na ścieżce searchu (od korzenia w dół).
-    // Sprawdzamy, czy dana pozycja (klucz Zobrist) pojawiła się już
-    // wcześniej na bieżącej ścieżce lub w historii gry.
+    // Repetition history contains game positions before the current root;
+    // repetitionPath starts with the root and tracks the active search line.
     static bool enterNode(uint64_t zobristKey);
     static void exitNode(uint64_t zobristKey);
 

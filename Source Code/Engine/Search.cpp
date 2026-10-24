@@ -231,24 +231,24 @@ struct NodeRepGuard
 
 bool Search::enterNode(uint64_t zobristKey)
 {
-    // Sprawdzamy powtórzenie na bieżącej ścieżce wyszukiwania (cykl w drzewie)
+    int previousOccurrences = 0;
+
+    // Count positions already visited on this branch.
     for (const uint64_t key : repetitionPath)
     {
         if (key == zobristKey)
-            return true;
+            ++previousOccurrences;
     }
 
-    // Sprawdzamy historię gry
-    int historyCount = 0;
+    // Also include positions played before the current search root.
     for (const uint64_t key : repetitionHistory)
     {
         if (key == zobristKey)
-            ++historyCount;
+            ++previousOccurrences;
     }
 
-    // Jeśli pozycja pojawiła się już trzy razy w historii gry (włącznie z aktualną),
-    // to jest remis przez powtórzenie.
-    if (historyCount >= 3)
+    // The two previous occurrences plus this node make a threefold repetition.
+    if (previousOccurrences >= 2)
     {
         return true;
     }
@@ -310,14 +310,18 @@ Move Search::findBestMove(Board& board, int depth)
     Move completedBestMove;
     int completedDepth = 0;
 
-    //--------------------------------------------------
-    // Inicjalizacja śledzenia powtórzeń na ścieżce searchu.
-    // Zaszczepiamy liczniki pozycjami z historii gry (włącznie z
-    // aktualną pozycją), aby powtórzenia z rzeczywistej partii
-    // również były wykrywane wewnątrz symulowanych ruchów.
-    //--------------------------------------------------
+
+    // Keep past game positions separate from the current root, which is the
+    // first position on the search path.
     repetitionHistory = GameHistory::getPositions();
     repetitionPath.clear();
+    const uint64_t rootKey = board.getZobristKey();
+    if (repetitionHistory.empty() || repetitionHistory.back() != rootKey)
+    {
+        repetitionHistory.push_back(rootKey);
+    }
+    repetitionHistory.pop_back();
+    repetitionPath.push_back(rootKey);
 
     MoveList rootMoves;
     const MoveValidator::CheckInfo pseudoInfo{};
@@ -381,7 +385,6 @@ Move Search::findBestMove(Board& board, int depth)
 
     // Probe root position in TT for best move
     Move ttRootMove = Move{};
-    const uint64_t rootKey = board.getZobristKey();
     if (auto* rootEntry = TranspositionTable::probe(rootKey))
     {
         ttRootMove = rootEntry->bestMove;
