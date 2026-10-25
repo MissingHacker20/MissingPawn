@@ -35,66 +35,84 @@
 
 namespace
 {
-char pieceLetter(Piece piece)
-{
-    switch (piece)
+    char pieceLetter(Piece piece)
     {
-    case Piece::WhitePawn: case Piece::BlackPawn: return 'P';
-    case Piece::WhiteKnight: case Piece::BlackKnight: return 'N';
-    case Piece::WhiteBishop: case Piece::BlackBishop: return 'B';
-    case Piece::WhiteRook: case Piece::BlackRook: return 'R';
-    case Piece::WhiteQueen: case Piece::BlackQueen: return 'Q';
-    case Piece::WhiteKing: case Piece::BlackKing: return 'K';
-    default: return '?';
-    }
-}
-
-char promotionLetter(MoveFlag flag)
-{
-    switch (flag)
-    {
-    case MoveFlag::PromotionKnight:
-    case MoveFlag::PromotionCaptureKnight: return 'N';
-    case MoveFlag::PromotionBishop:
-    case MoveFlag::PromotionCaptureBishop: return 'B';
-    case MoveFlag::PromotionRook:
-    case MoveFlag::PromotionCaptureRook: return 'R';
-    case MoveFlag::PromotionQueen:
-    case MoveFlag::PromotionCaptureQueen: return 'Q';
-    default: return 0;
-    }
-}
-
-bool isPromotion(MoveFlag flag)
-{
-    return promotionLetter(flag) != 0;
-}
-
-std::string sawMoveText(Board& board, const Move& move)
-{
-    std::string text;
-    if (move.flag == MoveFlag::KingCastle)
-        text = "O-O";
-    else if (move.flag == MoveFlag::QueenCastle)
-        text = "O-O-O";
-    else
-    {
-        text = squareToString(move.to);
-        if (move.capturedPiece != Piece::None || move.flag == MoveFlag::EnPassant)
-            text += 'x';
-        if (isPromotion(move.flag))
-            text += promotionLetter(move.flag);
-        if (move.flag == MoveFlag::EnPassant)
-            text += "Ep";
+        switch (piece)
+        {
+        case Piece::WhitePawn:
+        case Piece::BlackPawn:
+            return 'P';
+        case Piece::WhiteKnight:
+        case Piece::BlackKnight:
+            return 'N';
+        case Piece::WhiteBishop:
+        case Piece::BlackBishop:
+            return 'B';
+        case Piece::WhiteRook:
+        case Piece::BlackRook:
+            return 'R';
+        case Piece::WhiteQueen:
+        case Piece::BlackQueen:
+            return 'Q';
+        case Piece::WhiteKing:
+        case Piece::BlackKing:
+            return 'K';
+        default:
+            return '?';
+        }
     }
 
-    UndoInfo undo;
-    board.makeMove(move, undo);
-    if (MoveValidator::isKingInCheck(board, board.getSideToMove()))
-        text += '+';
-    board.undoMove(move, undo);
-    return text;
-}
+    char promotionLetter(MoveFlag flag)
+    {
+        switch (flag)
+        {
+        case MoveFlag::PromotionKnight:
+        case MoveFlag::PromotionCaptureKnight:
+            return 'N';
+        case MoveFlag::PromotionBishop:
+        case MoveFlag::PromotionCaptureBishop:
+            return 'B';
+        case MoveFlag::PromotionRook:
+        case MoveFlag::PromotionCaptureRook:
+            return 'R';
+        case MoveFlag::PromotionQueen:
+        case MoveFlag::PromotionCaptureQueen:
+            return 'Q';
+        default:
+            return 0;
+        }
+    }
+
+    bool isPromotion(MoveFlag flag)
+    {
+        return promotionLetter(flag) != 0;
+    }
+
+    std::string sawMoveText(Board &board, const Move &move)
+    {
+        std::string text;
+        if (move.flag == MoveFlag::KingCastle)
+            text = "O-O";
+        else if (move.flag == MoveFlag::QueenCastle)
+            text = "O-O-O";
+        else
+        {
+            text = squareToString(move.to);
+            if (move.capturedPiece != Piece::None || move.flag == MoveFlag::EnPassant)
+                text += 'x';
+            if (isPromotion(move.flag))
+                text += promotionLetter(move.flag);
+            if (move.flag == MoveFlag::EnPassant)
+                text += "Ep";
+        }
+
+        UndoInfo undo;
+        board.makeMove(move, undo);
+        if (MoveValidator::isKingInCheck(board, board.getSideToMove()))
+            text += '+';
+        board.undoMove(move, undo);
+        return text;
+    }
 }
 
 Board UCI::board;
@@ -106,10 +124,12 @@ std::atomic<bool> UCI::searchActive{false};
 std::atomic<bool> UCI::searchStarted{false};
 
 // Globalna książka otwarć
-static std::vector<BookEntry> g_openingBook;
-static bool g_openingBookEnabled = false;
+static std::vector<PolyglotBookEntry> g_openingBook;
+static bool g_openingBookEnabled = true;
+static int g_openingBookMaxPly = 0;
+static int g_openingBookPhysicalMaxPly = 0;
 
-uint64_t UCI::perft(Board& board, int depth)
+uint64_t UCI::perft(Board &board, int depth)
 {
     if (depth == 0)
         return 1;
@@ -129,33 +149,33 @@ uint64_t UCI::perft(Board& board, int depth)
 
 namespace
 {
-void perftDivide(Board& board, int depth)
-{
-    if (depth == 0)
+    void perftDivide(Board &board, int depth)
     {
-        std::cout << "info string divide total 1" << std::endl;
-        return;
-    }
+        if (depth == 0)
+        {
+            std::cout << "info string divide total 1" << std::endl;
+            return;
+        }
 
-    MoveList moves;
-    MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
-    uint64_t total = 0;
-    for (int i = 0; i < moves.size(); ++i)
-    {
-        UndoInfo undo;
-        board.makeMove(moves[i], undo);
-        const uint64_t nodes = UCI::perft(board, depth - 1);
-        board.undoMove(moves[i], undo);
-        total += nodes;
-        std::cout << "info string divide " << moves[i].toUCI()
-                  << " nodes " << nodes << std::endl;
+        MoveList moves;
+        MoveGenerator::generateMoves(board, moves, MoveValidator::CheckInfo{});
+        uint64_t total = 0;
+        for (int i = 0; i < moves.size(); ++i)
+        {
+            UndoInfo undo;
+            board.makeMove(moves[i], undo);
+            const uint64_t nodes = UCI::perft(board, depth - 1);
+            board.undoMove(moves[i], undo);
+            total += nodes;
+            std::cout << "info string divide " << moves[i].toUCI()
+                      << " nodes " << nodes << std::endl;
+        }
+        std::cout << "info string divide total " << total << std::endl;
     }
-    std::cout << "info string divide total " << total << std::endl;
-}
 }
 
 bool UCI::executeCommand(
-    const std::string& command)
+    const std::string &command)
 {
     auto tokens = tokenize(command);
 
@@ -166,7 +186,8 @@ bool UCI::executeCommand(
 
     std::string commandName = tokens[0];
     std::transform(commandName.begin(), commandName.end(), commandName.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                   [](unsigned char c)
+                   { return static_cast<char>(std::tolower(c)); });
 
     // Podczas trwającego searchu ignorujemy komendy, które modyfikują
     // planszę / tablice (wyścigi danych z wątkiem przeszukującym).
@@ -232,15 +253,17 @@ bool UCI::executeCommand(
                 }
                 const uint64_t nodes = UCI::perft(testBoard, depth);
                 const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start).count();
+                                         std::chrono::steady_clock::now() - start)
+                                         .count();
                 const uint64_t nps = elapsed > 0
-                    ? nodes * 1000 / static_cast<uint64_t>(elapsed) : 0;
+                                         ? nodes * 1000 / static_cast<uint64_t>(elapsed)
+                                         : 0;
                 std::cout << "info string perft depth " << depth
                           << " nodes " << nodes
                           << " time " << elapsed
                           << " nps " << nps << std::endl;
             }
-            catch (const std::exception&)
+            catch (const std::exception &)
             {
                 std::cout << "info string Invalid perft depth; expected an integer from 0 to 8." << std::endl;
             }
@@ -257,13 +280,16 @@ bool UCI::executeCommand(
         }
         const int whiteScore = Evaluation::evaluate(board);
         const int sideScore = board.getSideToMove() == ChessColor::White ? whiteScore : -whiteScore;
-        const auto printSigned = [](int value) {
-            if (value > 0) std::cout << '+';
+        const auto printSigned = [](int value)
+        {
+            if (value > 0)
+                std::cout << '+';
             std::cout << value;
         };
         std::cout << "info string eval (white, mP): ";
         printSigned(whiteScore);
-        std::cout << std::endl << "info string eval (side to move, mP): ";
+        std::cout << std::endl
+                  << "info string eval (side to move, mP): ";
         printSigned(sideScore);
         std::cout << std::endl;
         return true;
@@ -369,9 +395,16 @@ void UCI::run()
 {
     UCIOptions::initialize();
 
-    // Inicjalizuj książkę otwarć
-    initializeBook();
-    g_openingBook = buildOpeningBook();
+    // Wczytaj książkę Polyglot z katalogu silnika lub jego podkatalogu.
+    if (!loadOpeningBook("Source Code/OpeningBooks/DCbook_large.bin", g_openingBook) &&
+        !loadOpeningBook("OpeningBooks/DCbook_large.bin", g_openingBook))
+    {
+        std::cerr << "info string Could not load opening book DCbook_large.bin." << std::endl;
+    }
+    g_openingBookPhysicalMaxPly = getOpeningBookMaxFullmove(g_openingBook);
+    // Use the book's actual coverage by default, while allowing `book depth`
+    // to restrict it to a shallower line.
+    g_openingBookMaxPly = g_openingBookPhysicalMaxPly;
 
     std::string command;
 
@@ -402,7 +435,7 @@ void UCI::commandUCI()
     std::cout << "id author Kacper Wieczorek" << std::endl;
     std::cout << "option name Hash type spin default 64 min 1 max 4096" << std::endl;
     std::cout << "option name Ponder type check default false" << std::endl;
-    std::cout << "option name BookMoves type check default false" << std::endl;
+    std::cout << "option name BookMoves type check default true" << std::endl;
     std::cout << "uciok" << std::endl;
 }
 
@@ -423,7 +456,7 @@ void UCI::commandQuit()
 }
 
 void UCI::commandGo(
-    const std::vector<std::string>& tokens)
+    const std::vector<std::string> &tokens)
 {
     std::string parseError;
     GoParameters params = UCIParser::parseGo(tokens, parseError);
@@ -437,12 +470,13 @@ void UCI::commandGo(
     // Sprawdź książkę otwarć
     //--------------------------------------------------
 
-    if (g_openingBookEnabled && hasBookMove(g_openingBook, board.getZobristKey()))
+    if (g_openingBookEnabled && g_openingBookMaxPly > 0 &&
+        (board.getFullmoveNumber() - 1) < g_openingBookMaxPly)
     {
-        Move bookMove = getBookMove(g_openingBook, board);
+        Move bookMove = getOpeningBookMove(g_openingBook, board, g_openingBookMaxPly);
         if (bookMove.from != Square::None)
         {
-            std::cout << "info string Book move played." << std::endl;
+            std::cout << "info string Bookmove was played" << std::endl;
             std::cout << "bestmove " << bookMove.toUCI() << std::endl;
             return;
         }
@@ -495,7 +529,7 @@ void UCI::commandGo(
     Search::setPonder(
         params.ponder);
 
-//--------------------------------------------------
+    //--------------------------------------------------
     // Oblicz limit czasu na ten ruch
     //--------------------------------------------------
     //
@@ -578,11 +612,10 @@ void UCI::commandGo(
     searchActive = true;
     searchStarted = false;
     searchThread = std::thread([depth]()
-    {
+                               {
         UCI::searchStarted = true;
         Search::findBestMove(UCI::board, depth);
-        UCI::searchActive = false;
-    });
+        UCI::searchActive = false; });
 
     // Poczekaj aż wątek searchu faktycznie się uruchomi (ustawi searchStarted),
     // by uniknąć wyścigu z komendami "stop"/"quit" przychodzącymi natychmiast po "go".
@@ -606,7 +639,7 @@ void UCI::commandSaw()
 
     for (int i = 0; i < moves.size(); ++i)
     {
-        const Move& first = moves[i];
+        const Move &first = moves[i];
         bool alreadyPrinted = false;
         for (int j = 0; j < i; ++j)
         {
@@ -616,7 +649,8 @@ void UCI::commandSaw()
                 break;
             }
         }
-        if (alreadyPrinted) continue;
+        if (alreadyPrinted)
+            continue;
 
         std::cout << pieceLetter(first.piece) << squareToString(first.from) << ":";
         for (int j = i; j < moves.size(); ++j)
@@ -648,9 +682,17 @@ bool UCI::shouldStop()
 }
 
 std::vector<std::string> UCI::tokenize(
-    const std::string& command)
+    const std::string &command)
 {
-    std::stringstream ss(command);
+    std::string normalizedCommand = command;
+    if (normalizedCommand.size() >= 3 &&
+        static_cast<unsigned char>(normalizedCommand[0]) == 0xEF &&
+        static_cast<unsigned char>(normalizedCommand[1]) == 0xBB &&
+        static_cast<unsigned char>(normalizedCommand[2]) == 0xBF)
+    {
+        normalizedCommand.erase(0, 3);
+    }
+    std::stringstream ss(normalizedCommand);
 
     std::vector<std::string> tokens;
 
@@ -658,6 +700,13 @@ std::vector<std::string> UCI::tokenize(
 
     while (ss >> token)
     {
+        if (tokens.empty() && token.size() >= 3 &&
+            static_cast<unsigned char>(token[0]) == 0xEF &&
+            static_cast<unsigned char>(token[1]) == 0xBB &&
+            static_cast<unsigned char>(token[2]) == 0xBF)
+        {
+            token.erase(0, 3);
+        }
         tokens.push_back(token);
     }
 
@@ -681,7 +730,7 @@ void UCI::commandUCINewGame()
 }
 
 void UCI::commandDebug(
-    const std::vector<std::string>& tokens)
+    const std::vector<std::string> &tokens)
 {
     if (tokens.size() != 2)
     {
@@ -691,7 +740,8 @@ void UCI::commandDebug(
 
     std::string mode = tokens[1];
     std::transform(mode.begin(), mode.end(), mode.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                   [](unsigned char c)
+                   { return static_cast<char>(std::tolower(c)); });
 
     if (mode == "on" || mode == "true" || mode == "1")
     {
@@ -713,33 +763,81 @@ void UCI::commandDebug(
 }
 
 void UCI::commandBook(
-    const std::vector<std::string>& tokens)
+    const std::vector<std::string> &tokens)
 {
+    if (tokens.size() == 2)
+    {
+        std::string subcommand = tokens[1];
+        std::transform(subcommand.begin(), subcommand.end(), subcommand.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        if (subcommand == "info")
+        {
+            std::cout << "info string Opening book enabled: "
+                      << (g_openingBookEnabled ? "true" : "false") << std::endl;
+            std::cout << "info string Opening book entries: " << g_openingBook.size() << std::endl;
+            std::cout << "info string Opening book physical maximum depth: "
+                      << g_openingBookPhysicalMaxPly << " fullmoves" << std::endl;
+            std::cout << "info string Opening book configured depth: "
+                      << g_openingBookMaxPly << " fullmoves" << std::endl;
+            return;
+        }
+    }
+    if (tokens.size() == 3)
+    {
+        std::string subcommand = tokens[1];
+        std::transform(subcommand.begin(), subcommand.end(), subcommand.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        if (subcommand != "depth")
+        {
+            std::cout << "info string book error: usage is book true|false, book depth <fullmove> or book info." << std::endl;
+            return;
+        }
+        try
+        {
+            size_t parsed = 0;
+            const int depth = std::stoi(tokens[2], &parsed);
+            if (parsed != tokens[2].size() || depth < 0)
+                throw std::out_of_range("depth");
+            g_openingBookMaxPly = (depth == 0)
+                                      ? g_openingBookPhysicalMaxPly
+                                      : std::min(depth, g_openingBookPhysicalMaxPly);
+            std::cout << "info string Opening book maximum fullmove set to "
+                      << g_openingBookMaxPly << "." << std::endl;
+        }
+        catch (const std::exception &)
+        {
+            std::cout << "info string book error: depth must be a non-negative integer." << std::endl;
+        }
+        return;
+    }
     if (tokens.size() != 2)
     {
-        std::cout << "info string book error: usage is book on|off." << std::endl;
+        std::cout << "info string book error: usage is book true|false, book depth <fullmove> or book info." << std::endl;
         return;
     }
 
     std::string state = tokens[1];
     std::transform(state.begin(), state.end(), state.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                   [](unsigned char c)
+                   { return static_cast<char>(std::tolower(c)); });
 
-    if (state == "on")
+    if (state == "on" || state == "true")
     {
         g_openingBookEnabled = true;
         std::cout << "info string Opening book enabled." << std::endl;
         return;
     }
 
-    if (state == "off")
+    if (state == "off" || state == "false")
     {
         g_openingBookEnabled = false;
         std::cout << "info string Opening book disabled." << std::endl;
         return;
     }
 
-    std::cout << "info string book error: expected on|off, got '" << tokens[1] << "'." << std::endl;
+    std::cout << "info string book error: expected true|false, got '" << tokens[1] << "'." << std::endl;
 }
 
 bool UCI::isDebugMode()
@@ -748,7 +846,7 @@ bool UCI::isDebugMode()
 }
 
 void UCI::commandRegister(
-    const std::vector<std::string>&)
+    const std::vector<std::string> &)
 {
     std::cout << "info string MissingPawn does not require registration." << std::endl;
 }
@@ -770,4 +868,3 @@ void UCI::commandPonderHit()
 
     std::cout << "info string PonderHit received." << std::endl;
 }
-
