@@ -86,8 +86,14 @@ std::pair<int, int> QueenEvaluation::evaluatePair(const Board& /*board*/, const 
         mgScore += MaterialMG;
         egScore += MaterialEG;
 
-        mgScore += CenterBonusMG;
-        egScore += CenterBonusEG;
+        const int file = static_cast<int>(square) % 8;
+        const int rank = static_cast<int>(square) / 8;
+        const int centerDistance =
+            std::abs(file - 3) + std::abs(file - 4) +
+            std::abs(rank - 3) + std::abs(rank - 4);
+        const int centerSteps = (centerDistance - 2) / 2;
+        mgScore += std::max(0, CenterBonusMG - centerSteps * 40);
+        egScore += std::max(0, CenterBonusEG - centerSteps * 45);
 
         // Early development is a problem only when the queen is actually
         // exposed to attack while the minor pieces still block development.

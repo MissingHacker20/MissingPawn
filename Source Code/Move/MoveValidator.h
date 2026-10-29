@@ -49,6 +49,11 @@ public:
         const Board& board,
         Square square);
 
+    // Static Exchange Evaluation for a specific legal capture move.
+    static int see(
+        const Board& board,
+        const Move& move);
+
     static void updatePieceBitboards(
         Board& board,
         const MoveList& legalMoves);
@@ -82,32 +87,34 @@ private:
 
     static int pieceValue(Piece piece);
 
- // Zwraca najtańszą figurę danego koloru, która atakuje pole.
-    // Zapisuje jej pole w `fromSquare`. Zwraca Piece::None, jeśli nie ma.
     static Piece leastValuableAttacker(
         const Board& board,
         Square square,
         ChessColor attacker,
         Square& fromSquare);
 
-    // Rekurencyjna część SEE. Operuje na kopii planszy (board),
-    // która jest modyfikowana w trakcie symulacji wymiany.
     static int seeRecursive(
         Board& board,
         Square square,
         ChessColor sideToMove,
         int value);
 
-    // Sprawdza, czy figura na polu `from` ma czysty promień do (targetFile,
-    // targetRank) po linii prostej (wiersz/kolumna).
+    static int seeCaptureSequence(
+        Board& board,
+        Square square,
+        int depth);
+
+    static bool leastLegalAttacker(
+        const Board& board,
+        Square square,
+        Move& move);
+
     static bool isStraightAttacker(
         const Board& board,
         Square from,
         int targetFile,
         int targetRank);
 
-    // Sprawdza, czy figura na polu `from` ma czysty promień do (targetFile,
-    // targetRank) po przekątnej.
     static bool isDiagonalAttacker(
         const Board& board,
         Square from,

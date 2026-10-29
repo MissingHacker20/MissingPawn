@@ -37,11 +37,15 @@ void Board::clear()
     attackBitboards.fill(0);
     moveBitboards.fill(0);
 
+    evalScore = 0;
+    evalValid = false;
+
     updateZobristKey();
 }
 
 void Board::setPiece(Piece piece, Square square)
 {
+    evalValid = false;
     const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     setBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = piece;
@@ -60,6 +64,7 @@ void Board::setPiece(Piece piece, Square square)
 
 void Board::removePiece(Piece piece, Square square)
 {
+    evalValid = false;
     const Bitboard bit = Bitboard(1) << static_cast<int>(square);
     clearBit(bitboards[static_cast<int>(piece)], square);
     mailbox[static_cast<int>(square)] = Piece::None;
@@ -623,7 +628,7 @@ void Board::makeMove(
     clearPieceMoves(move.from);
     clearPieceMoves(move.to);
 
-    // Update evaluation incrementally
+    // Invalidate the cached evaluation after the move.
     updateEvalOnMove(move, undoInfo);
 }
 
@@ -903,6 +908,7 @@ void Board::makeNullMove(
     undoInfo.halfmoveClock = halfmoveClock;
     undoInfo.wasNullMove = true;
     undoInfo.evalScore = evalScore;  // Save current eval
+    undoInfo.evalValid = evalValid;
 
     // XOR out old EP if valid
     if (Zobrist::isEnPassantValid(*this, enPassantSquare))
@@ -942,6 +948,7 @@ void Board::undoNullMove(
     sideToMove = undoInfo.sideToMove;
     halfmoveClock = undoInfo.halfmoveClock;
     evalScore = undoInfo.evalScore;  // Restore eval
+    evalValid = undoInfo.evalValid;
 }
 
 Piece Board::pieceAt(Square square) const
@@ -1082,20 +1089,34 @@ void Board::clearAllPieceBitboards()
     moveBitboards.fill(0);
 }
 
+int Board::getEvalScore() const
+{
+    if (!evalValid)
+    {
+        evalScore = Evaluation::evaluate(*this);
+        evalValid = true;
+    }
+    return evalScore;
+}
+
 void Board::recomputeEval()
 {
     evalScore = Evaluation::evaluate(*this);
+    evalValid = true;
 }
 
 void Board::updateEvalOnMove(const Move& move, UndoInfo& undoInfo)
 {
     (void)move;
     undoInfo.evalScore = evalScore;
-    evalScore = Evaluation::evaluate(*this);
+    undoInfo.evalValid = evalValid;
+    // Evaluation is lazy: most searched children are never statically scored.
+    evalValid = false;
 }
 
 void Board::updateEvalOnUndo(const Move& move, const UndoInfo& undoInfo)
 {
     (void)move;
     evalScore = undoInfo.evalScore;
+    evalValid = undoInfo.evalValid;
 }

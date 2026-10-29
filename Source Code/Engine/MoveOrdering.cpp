@@ -11,8 +11,6 @@
 #include "MoveOrdering.h"
 #include "KillerMoves.h"
 #include "HistoryHeuristic.h"
-#include "Move/MoveValidator.h"
-
 #include <algorithm>
 #include <cstdlib>
 
@@ -96,14 +94,6 @@ int MoveOrdering::scoreMove(
 
         // MVV-LVA: wyżej bicia wartościowych bierek przez mniej wartościowe
         score += victim * 100 - attacker;
-
-        // SEE doprecyzowuje MVV-LVA także dla pozornie dobrych bić.
-        // Ograniczamy je do zwykłych bić; promocje są już porządkowane osobno
-        // przez premię poniżej, a en passant nie ma klasycznej ofiary na `to`.
-        if (move.flag == MoveFlag::Capture)
-        {
-            score += MoveValidator::see(board, move.to);
-        }
 
         // Promocja z biciem jeszcze wyżej
         if (isPromotion(move))
@@ -221,4 +211,3 @@ void MoveOrdering::sortMoves(
     for (int i = 0; i < limit; ++i)
         moves[i] = scratch[i];
 }
-

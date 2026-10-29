@@ -123,15 +123,15 @@ void TranspositionTable::store(uint64_t key, int depth, int score, NodeType type
         Entry& candidate = cluster[i];
         if (!candidate.empty && candidate.key == key)
         {
-            // A fresh move is useful for ordering even when the score was
-            // obtained at a shallower depth.
-            if (depth >= candidate.depth || bestMove.from != Square::None)
+            // Preserve a deeper result; a shallower search may still provide
+            // a useful move for ordering without replacing its bound/score.
+            if (bestMove.from != Square::None)
+                candidate.bestMove = bestMove;
+            if (depth >= candidate.depth)
             {
                 candidate.depth = depth;
                 candidate.score = score;
                 candidate.type = type;
-                if (bestMove.from != Square::None)
-                    candidate.bestMove = bestMove;
                 candidate.age = currentAge;
             }
             return;

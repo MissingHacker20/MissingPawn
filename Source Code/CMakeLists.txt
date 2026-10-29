@@ -70,6 +70,36 @@ set_target_properties(MissingPawn PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
+if(BUILD_TESTING)
+    add_executable(EngineRegressionTests
+        ${ENGINE_CORE_SOURCES}
+        "${CMAKE_SOURCE_DIR}/Tests/EngineRegressionTests.cpp"
+    )
+    add_executable(PerftTests
+        ${ENGINE_CORE_SOURCES}
+        "${CMAKE_SOURCE_DIR}/Tests/PerftTests.cpp"
+    )
+
+    foreach(test_target EngineRegressionTests PerftTests)
+        target_include_directories(${test_target} PRIVATE
+            .
+            Engine
+            Foundation
+            Game
+            Move
+            Others
+            Others/UCI
+            Rate
+            OpeningBooks
+        )
+        target_compile_definitions(${test_target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+        if(WIN32)
+            target_compile_definitions(${test_target} PRIVATE NOMINMAX)
+        endif()
+        add_test(NAME ${test_target} COMMAND ${test_target})
+    endforeach()
+endif()
+
 # MissingPawn.exe nie wymaga środowiska MinGW ani jego plików DLL.
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_options(MissingPawn PRIVATE

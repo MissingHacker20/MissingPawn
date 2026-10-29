@@ -59,6 +59,16 @@ inline int valueOfPiece(Piece piece)
     return PieceValue[static_cast<int>(piece)];
 }
 
+uint64_t transpositionKey(const Board& board)
+{
+    uint64_t clockHash = static_cast<uint64_t>(board.getHalfmoveClock()) +
+        0x9e3779b97f4a7c15ULL;
+    clockHash = (clockHash ^ (clockHash >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    clockHash = (clockHash ^ (clockHash >> 27)) * 0x94d049bb133111ebULL;
+    clockHash ^= clockHash >> 31;
+    return board.getZobristKey() ^ clockHash;
+}
+
 // Lightweight MVV-LVA score for quiescence move sorting
 inline int mvvLvaScore(const Move& move)
 {
@@ -68,16 +78,13 @@ inline int mvvLvaScore(const Move& move)
     return victim * 100 - attacker;
 }
 
-int nonPawnMaterialCount(const Board& board)
+int nonPawnMaterialCount(const Board& board, ChessColor side)
 {
-    return countBits(board.getBitboard(Piece::WhiteKnight)) +
-           countBits(board.getBitboard(Piece::WhiteBishop)) +
-           countBits(board.getBitboard(Piece::WhiteRook)) +
-           countBits(board.getBitboard(Piece::WhiteQueen)) +
-           countBits(board.getBitboard(Piece::BlackKnight)) +
-           countBits(board.getBitboard(Piece::BlackBishop)) +
-           countBits(board.getBitboard(Piece::BlackRook)) +
-           countBits(board.getBitboard(Piece::BlackQueen));
+    const bool white = side == ChessColor::White;
+    return countBits(board.getBitboard(white ? Piece::WhiteKnight : Piece::BlackKnight)) +
+           countBits(board.getBitboard(white ? Piece::WhiteBishop : Piece::BlackBishop)) +
+           countBits(board.getBitboard(white ? Piece::WhiteRook : Piece::BlackRook)) +
+           countBits(board.getBitboard(white ? Piece::WhiteQueen : Piece::BlackQueen));
 }
 
 int scoreToTT(int score, int ply)
@@ -98,21 +105,27 @@ int scoreFromTT(int score, int ply)
     return score;
 }
 
+bool quietMoveGivesCheck(Board& board, const Move& move)
+{
+    UndoInfo undo;
+    board.makeMove(move, undo);
+    const bool givesCheck = MoveValidator::isKingInCheck(board, board.getSideToMove());
+    board.undoMove(move, undo);
+    return givesCheck;
+}
+
 bool safeForNullMove(const Board& board, ChessColor side)
 {
     const Piece queen = side == ChessColor::White ? Piece::WhiteQueen : Piece::BlackQueen;
     const bool hasQueen = board.getBitboard(queen) != 0;
     // Null move is unreliable in sparse minor/pawn endings: zugzwang is common
-    // and passing is not a realistic realistic option there.
-    // Even with a rook/queen, pawn endings with only one minor piece can
-    // exhibit zugzwang. Require a meaningful amount of non-pawn material on
-    // both sides unless the position still has a queen.
+    // and passing is not a realistic option there.
+    // Evaluate the material of the side that would pass; opponent material
+    // alone cannot make that side safe from zugzwang.
     const bool hasRook = board.getBitboard(
         side == ChessColor::White ? Piece::WhiteRook : Piece::BlackRook) != 0;
-    const int nonPawnMaterial = nonPawnMaterialCount(board);
-    // Null move is unreliable in sparse endings: zugzwang is common. A queen
-    // is enough material to make it safe; rook endings require extra material.
-    return hasQueen || (hasRook && nonPawnMaterial >= 4) || nonPawnMaterial >= 6;
+    const int ownNonPawnMaterial = nonPawnMaterialCount(board, side);
+    return hasQueen || (hasRook && ownNonPawnMaterial >= 2) || ownNonPawnMaterial >= 3;
 }
 
 // Reconstruct PV from transposition table by following bestMove chain.
@@ -131,7 +144,7 @@ bool safeForNullMove(const Board& board, ChessColor side)
 
     while (pvNodes < maxPvNodes && currentPly < Search::MaxPly - 1)
     {
-        uint64_t key = tempBoard.getZobristKey();
+        const uint64_t key = tempBoard.getZobristKey();
 
         // Cycle detection
         for (int i = 0; i < visitedCount; ++i)
@@ -142,7 +155,8 @@ bool safeForNullMove(const Board& board, ChessColor side)
         visitedKeys[visitedCount++] = key;
 
         // Probe TT for this position
-        TranspositionTable::Entry* pvEntry = TranspositionTable::probe(key);
+        TranspositionTable::Entry* pvEntry =
+            TranspositionTable::probe(transpositionKey(tempBoard));
         if (!pvEntry ||
             pvEntry->bestMove.from == Square::None)
             break;
@@ -316,6 +330,7 @@ Move Search::findBestMove(Board& board, int depth)
     repetitionHistory = GameHistory::getPositions();
     repetitionPath.clear();
     const uint64_t rootKey = board.getZobristKey();
+    const uint64_t rootTTKey = transpositionKey(board);
     if (repetitionHistory.empty() || repetitionHistory.back() != rootKey)
     {
         repetitionHistory.push_back(rootKey);
@@ -330,18 +345,19 @@ Move Search::findBestMove(Board& board, int depth)
     // Reguła 50 ruchów jest terminalna także w korzeniu wyszukiwania.
     // Nie pozwalaj, aby szybka ścieżka (np. jedyny legalny ruch) ominęła
     // remis i zwróciła ocenę materiałową.
-    if (board.getHalfmoveClock() >= 100)
-    {
-        std::cout << "info depth 0 score cp 0" << std::endl;
-        std::cout << "bestmove 0000" << std::endl;
-        return Move{};
-    }
-
     if (rootMoves.size() == 0)
     {
         // Brak legalnych ruchów: mat lub pat (UCI wysyła 0000).
         std::cout << "bestmove 0000" << std::endl;
         return Move{};
+    }
+
+    if (board.getHalfmoveClock() >= 100)
+    {
+        bestMove = rootMoves[0];
+        std::cout << "info depth 0 score cp 0" << std::endl;
+        std::cout << "bestmove " << bestMove.toUCI() << std::endl;
+        return bestMove;
     }
 
     if (rootMoves.size() == 1)
@@ -360,11 +376,19 @@ Move Search::findBestMove(Board& board, int depth)
     // przeciwnika w szachu, zagraj go natychmiast.
     for (int i = 0; i < rootMoves.size(); ++i)
     {
+        if (shouldStopSearch())
+            break;
+
         const Move& move = rootMoves[i];
         UndoInfo undoInfo;
         board.makeMove(move, undoInfo);
 
         MoveList oppMoves;
+        if (shouldStopSearch())
+        {
+            board.undoMove(move, undoInfo);
+            break;
+        }
         MoveGenerator::generateMoves(board, oppMoves, pseudoInfo);
         const bool oppInCheck =
             MoveValidator::isKingInCheck(board, board.getSideToMove());
@@ -385,7 +409,7 @@ Move Search::findBestMove(Board& board, int depth)
 
     // Probe root position in TT for best move
     Move ttRootMove = Move{};
-    if (auto* rootEntry = TranspositionTable::probe(rootKey))
+    if (auto* rootEntry = TranspositionTable::probe(rootTTKey))
     {
         ttRootMove = rootEntry->bestMove;
     }
@@ -496,7 +520,7 @@ Move Search::findBestMove(Board& board, int depth)
         // result explicitly. This makes the root TT move useful on the next
         // iterative search without storing interrupted iterations.
         TranspositionTable::store(
-            rootKey,
+            rootTTKey,
             currentDepth,
             scoreToTT(bestScore, 0),
             TranspositionTable::NodeType::Exact,
@@ -586,6 +610,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
 
     const uint64_t nodeKey = board.getZobristKey();
+    const uint64_t nodeTTKey = transpositionKey(board);
     bool needExit = false;
 
     if (repetitionPath.empty() || repetitionPath.back() != nodeKey)
@@ -642,7 +667,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     //--------------------------------------------------
     // Transposition Table probe in quiescence
     //--------------------------------------------------
-    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeTTKey);
     Move ttMove{};
 
     // Qsearch may be entered more than once for the same ply during a
@@ -742,7 +767,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
         // SEE must describe the exchange in the parent position.  Keep it
         // before makeMove; after the move the victim is no longer on `to`.
         const int seeScore = (!inCheck && move.capturedPiece != Piece::None)
-            ? MoveValidator::see(board, move.to) : 0;
+            ? MoveValidator::see(board, move) : 0;
 
         // SEE pruning: -1000 MP still allows protected tactical follow-ups.
         if (!inCheck && move.capturedPiece != Piece::None && seeScore < -1000)
@@ -817,7 +842,7 @@ int Search::quiesce(Board& board, int alpha, int beta, int ply)
     }
 
     TranspositionTable::store(
-        nodeKey, 0, scoreToTT(storeScore, ply), ttType, Move{});
+        nodeTTKey, 0, scoreToTT(storeScore, ply), ttType, Move{});
 
     return alpha;
 }
@@ -844,6 +869,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     }
 
     const uint64_t nodeKey = board.getZobristKey();
+    const uint64_t nodeTTKey = transpositionKey(board);
 
     // Powtórzenie na ścieżce searchu (lub w historii gry) - remis.
     if (enterNode(nodeKey))
@@ -871,7 +897,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     //--------------------------------------------------
     // Transposition Table probe
     //--------------------------------------------------
-    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeKey);
+    TranspositionTable::Entry* ttEntry = TranspositionTable::probe(nodeTTKey);
     Move ttMove = Move{};
 
     // Determine if this is a PV node based on original window.
@@ -885,7 +911,8 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         if (ttEntry->depth >= depth)
         {
             int ttScore = scoreFromTT(ttEntry->score, ply);
-
+            // The TT key includes the halfmove clock, so this bound belongs
+            // to the same rule-50 context as the current position.
             if (ttEntry->type == TranspositionTable::NodeType::Exact)
             {
                 // An exact TT score is sufficient for a cut node, but a PV
@@ -975,6 +1002,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     //--------------------------------------------------
 
     if (!pvNode && depth >= 3 && ply > 0 &&
+        board.getHalfmoveClock() + depth < 100 &&
         !MoveValidator::isKingInCheck(board, board.getSideToMove()) &&
         safeForNullMove(board, board.getSideToMove()))
     {
@@ -1001,12 +1029,20 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
             if (depth >= 8)
             {
                 const int verificationDepth = std::max(1, depth - 1 - R - 1);
-                const int verificationScore = -negamax(
-                    board,
-                    verificationDepth,
-                    -beta,
-                    -beta + 1,
-                    ply + 1);
+            // Search this same position at the same ply, without counting it
+            // a second time as a repetition. Restore the path on every exit.
+            if (!repetitionPath.empty() && repetitionPath.back() == nodeKey)
+                repetitionPath.pop_back();
+            int verificationScore;
+            {
+                struct VerificationPathGuard
+                {
+                    uint64_t key;
+                    ~VerificationPathGuard() { Search::repetitionPath.push_back(key); }
+                } pathGuard{nodeKey};
+                verificationScore = negamax(
+                    board, verificationDepth, -beta, -beta + 1, ply);
+            }
                 if (shouldStopSearch())
                 {
                     return 0;
@@ -1023,6 +1059,22 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         }
     }
 
+    // Guarantee a valid TT move is searched first even when it falls outside
+    // the ordinary partial-sort prefix.
+    // Explicitly promote the verified TT move before partial sorting.
+    if (ttMove.from != Square::None)
+    {
+        for (int i = 0; i < moves.size(); ++i)
+        {
+            if (moves[i] == ttMove)
+            {
+                for (int j = i; j > 0; --j)
+                    moves[j] = moves[j - 1];
+                moves[0] = ttMove;
+                break;
+            }
+        }
+    }
     MoveOrdering::sortMoves(board, moves, depth, ply, ttMove, 0, 32);
 
     // Safe frontier pruning: at depth one, a quiet move that cannot raise the
@@ -1053,7 +1105,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
         const Move& move = moves[index];
 
         if (useFutility && index > 0 && move.capturedPiece == Piece::None &&
-            move.flag != MoveFlag::KingCastle &&
+            !quietMoveGivesCheck(board, move) && move.flag != MoveFlag::KingCastle &&
             move.flag != MoveFlag::QueenCastle &&
             !(move.flag >= MoveFlag::PromotionKnight &&
               move.flag <= MoveFlag::PromotionCaptureQueen) &&
@@ -1241,7 +1293,7 @@ int Search::negamax(Board& board, int depth, int alpha, int beta, int ply)
     }
 
     TranspositionTable::store(
-        nodeKey, depth, scoreToTT(storeScore, ply), ttType, bestMove);
+        nodeTTKey, depth, scoreToTT(storeScore, ply), ttType, bestMove);
 
     return bestScore;
 }

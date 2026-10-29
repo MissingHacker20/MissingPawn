@@ -138,7 +138,8 @@ namespace
                 if (std::abs(epFile - file) == 1 && epRank == rank + (white ? 1 : -1) &&
                     board.pieceAt(ep) == Piece::None && capturedIndex >= 0 && capturedIndex < 64 &&
                     board.pieceAt(static_cast<Square>(capturedIndex)) == capturedPawn &&
-                    (!capturesOnly || (captureTarget & squareBit(ep))))
+                    (!capturesOnly || (captureTarget & squareBit(ep)) ||
+                     ep == board.getEnPassantSquare()))
                     moves.add(Move(from, ep, pawn, MoveFlag::EnPassant, capturedPawn));
             }
         }

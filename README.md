@@ -20,11 +20,25 @@ Examples include:
 - Banksia GUI
 - Fritz
 - ChessBase
-  
+
 A chess engine written in C++.
-## Requirements:
-- C++20 compiler
-- CMake
+## Requirements
+- C++20 compiler (MSVC 2022 or GCC 12+ recommended)
+- CMake 3.20+
+- Windows: Windows SDK. No third-party libraries are required.
+
+The project also uses GitHub Actions for Windows builds and regression tests on pushes and pull requests.
+
+## Build
+From the repository root:
+
+```powershell
+cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+For other CMake generators, omit `-A x64` and the `-C Release` arguments as appropriate.
 
 ## Usage
 

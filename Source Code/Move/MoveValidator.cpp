@@ -20,6 +20,7 @@
 #include "AttackTables.h"
 
 #include <algorithm>
+#include <limits>
 
 // (Nie używamy wersji bitboardowej tutaj - patrz computeAttackBoardFromBoard poniżej)
 
@@ -810,6 +811,146 @@ int MoveValidator::seeRecursive(
     return gain;
 }
 
+int MoveValidator::see(const Board& board, const Move& move)
+{
+    if (move.from == Square::None || move.to == Square::None ||
+        board.pieceAt(move.from) != move.piece ||
+        getPieceColor(move.piece) != board.getSideToMove())
+        return std::numeric_limits<int>::min() / 2;
+
+    const ChessColor side = board.getSideToMove();
+    const bool enPassant = move.flag == MoveFlag::EnPassant;
+    const bool pawn =
+        move.piece == Piece::WhitePawn || move.piece == Piece::BlackPawn;
+    const bool capturePromotion =
+        move.flag == MoveFlag::PromotionCaptureKnight ||
+        move.flag == MoveFlag::PromotionCaptureBishop ||
+        move.flag == MoveFlag::PromotionCaptureRook ||
+        move.flag == MoveFlag::PromotionCaptureQueen;
+    const Piece victim = enPassant ? move.capturedPiece : board.pieceAt(move.to);
+    if (victim == Piece::None || getPieceColor(victim) == side ||
+        victim == Piece::WhiteKing || victim == Piece::BlackKing ||
+        move.capturedPiece != victim ||
+        (!enPassant && move.flag != MoveFlag::Capture && !capturePromotion) ||
+        (capturePromotion && !pawn) ||
+        (enPassant && capturePromotion))
+        return std::numeric_limits<int>::min() / 2;
+
+    if (enPassant)
+    {
+        const Square victimSquare = static_cast<Square>(
+            static_cast<int>(move.to) + (side == ChessColor::White ? -8 : 8));
+        if (move.piece != (side == ChessColor::White ? Piece::WhitePawn : Piece::BlackPawn) ||
+            move.to != board.getEnPassantSquare() ||
+            board.pieceAt(move.to) != Piece::None ||
+            board.pieceAt(victimSquare) != victim)
+            return std::numeric_limits<int>::min() / 2;
+    }
+
+    const int sourceIndex = static_cast<int>(move.from);
+    const int targetIndex = static_cast<int>(move.to);
+    const int fileDistance = std::abs(sourceIndex % 8 - targetIndex % 8);
+    const int rankDistance = std::abs(sourceIndex / 8 - targetIndex / 8);
+    const bool reachesPromotionRank = pawn &&
+        (targetIndex / 8 == (side == ChessColor::White ? 7 : 0));
+    const Bitboard attacks = move.piece == Piece::WhitePawn
+        ? AttackTables::whitePawnAttacks(move.from)
+        : move.piece == Piece::BlackPawn
+            ? AttackTables::blackPawnAttacks(move.from)
+            : AttackTables::pieceAttacks(move.piece, move.from, board.getAllOccupancy());
+    if (fileDistance > 2 || rankDistance > 2 || !getBit(attacks, move.to) ||
+        (!pawn && move.flag != MoveFlag::Capture) ||
+        (reachesPromotionRank != capturePromotion))
+        return std::numeric_limits<int>::min() / 2;
+
+    if (!isMoveLegalSlow(board, move))
+        return std::numeric_limits<int>::min() / 2;
+
+    Board copy = board;
+    UndoInfo undoInfo;
+    copy.makeMove(move, undoInfo);
+
+    const Piece placed = copy.pieceAt(move.to);
+    const int promotionGain = pieceValue(placed) - pieceValue(move.piece);
+    return pieceValue(victim) + promotionGain -
+        seeCaptureSequence(copy, move.to, 0);
+}
+
+bool MoveValidator::leastLegalAttacker(
+    const Board& board,
+    Square square,
+    Move& bestMove)
+{
+    const ChessColor side = board.getSideToMove();
+    const Piece victim = board.pieceAt(square);
+    if (victim == Piece::None || getPieceColor(victim) == side)
+        return false;
+
+    const Piece firstPiece = side == ChessColor::White ? Piece::WhitePawn : Piece::BlackPawn;
+    const Piece lastPiece = side == ChessColor::White ? Piece::WhiteKing : Piece::BlackKing;
+    int bestValue = std::numeric_limits<int>::max();
+    bool found = false;
+
+    for (int pieceIndex = static_cast<int>(firstPiece);
+         pieceIndex <= static_cast<int>(lastPiece);
+         ++pieceIndex)
+    {
+        const Piece piece = static_cast<Piece>(pieceIndex);
+        Bitboard attackers = board.getBitboard(piece);
+        while (attackers)
+        {
+            const Square from = popLeastSignificantBit(attackers);
+            const Bitboard pieceAttacks = piece == Piece::WhitePawn
+                ? AttackTables::whitePawnAttacks(from)
+                : piece == Piece::BlackPawn
+                    ? AttackTables::blackPawnAttacks(from)
+                    : AttackTables::pieceAttacks(piece, from, board.getAllOccupancy());
+            if (!getBit(pieceAttacks, square))
+                continue;
+
+            Move candidate(from, square, piece, MoveFlag::Capture, victim);
+            const int targetRank = static_cast<int>(square) / 8;
+            if ((piece == Piece::WhitePawn && targetRank == 7) ||
+                (piece == Piece::BlackPawn && targetRank == 0))
+                candidate.flag = MoveFlag::PromotionCaptureQueen;
+
+            const int attackerValue = pieceValue(piece);
+            if (attackerValue >= bestValue ||
+                !isMoveLegalSlow(board, candidate))
+                continue;
+
+            bestValue = attackerValue;
+            bestMove = candidate;
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+int MoveValidator::seeCaptureSequence(
+    Board& board,
+    Square square,
+    int depth)
+{
+    constexpr int MaxExchangeDepth = 32;
+    if (depth >= MaxExchangeDepth)
+        return 0;
+
+    Move capture;
+    if (!leastLegalAttacker(board, square, capture))
+        return 0;
+
+    const Piece victim = board.pieceAt(square);
+    Board next = board;
+    UndoInfo undoInfo;
+    next.makeMove(capture, undoInfo);
+
+    const Piece placed = next.pieceAt(square);
+    const int gain = pieceValue(victim) + pieceValue(placed) - pieceValue(capture.piece);
+    return std::max(0, gain - seeCaptureSequence(next, square, depth + 1));
+}
+
 // Static Exchange Evaluation (SEE): symuluje wymianę na polu.
 // Zwraca bilans materiałowy z perspektywy strony, która zaczyna atak.
 // Ujemny wynik = strona zaczynająca traci; dodatni = zyskuje.
@@ -818,37 +959,26 @@ int MoveValidator::see(
     Square square)
 {
     const Piece victim = board.pieceAt(square);
-    if (victim == Piece::None)
-    {
+    if (victim == Piece::None || victim == Piece::WhiteKing || victim == Piece::BlackKing)
         return 0;
-    }
-
-// Strona, która zaczyna atak, to przeciwnik koloru figury na polu.
-    ChessColor attackerToMove = oppositeColor(getPieceColor(victim));
 
     Board copy = board;
+    const ChessColor attacker = oppositeColor(getPieceColor(victim));
+    if (copy.getSideToMove() != attacker)
+    {
+        UndoInfo nullMove;
+        copy.makeNullMove(nullMove);
+    }
 
-    // Wykonaj pierwsze bicie również w kopii. Bez postawienia pierwszego
-    // atakującego na polu wymiany SEE analizuje odbicie na pustym polu i może
-    // uznać QxR za bezpieczne, mimo że hetman jest natychmiast odbijany.
-    copy.removePiece(victim, square);
-
-    Square fromSquare = Square::None;
-    const Piece attacker = leastValuableAttacker(
-        copy, square, attackerToMove, fromSquare);
-    if (attacker == Piece::None)
+    Move firstCapture;
+    if (!leastLegalAttacker(copy, square, firstCapture))
         return 0;
 
-    copy.removePiece(attacker, fromSquare);
-    copy.setPiece(attacker, square);
-
-    const int opponentGain = seeRecursive(
-        copy,
-        square,
-        oppositeColor(attackerToMove),
-        pieceValue(attacker));
-
-    return pieceValue(victim) - opponentGain;
+    UndoInfo undoInfo;
+    copy.makeMove(firstCapture, undoInfo);
+    const Piece placed = copy.pieceAt(square);
+    const int gain = pieceValue(victim) + pieceValue(placed) - pieceValue(firstCapture.piece);
+    return gain - seeCaptureSequence(copy, square, 0);
 }
 
 namespace
@@ -1312,4 +1442,3 @@ MoveValidator::CheckInfo MoveValidator::computeCheckInfo(const Board& board, Che
 
     return info;
 }
-

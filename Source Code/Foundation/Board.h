@@ -85,8 +85,8 @@ public:
     void clearAllPieceBitboards();
 
     // Evaluation
-    int getEvalScore() const { return evalScore; }
-    void setEvalScore(int score) { evalScore = score; }
+    int getEvalScore() const;
+    void setEvalScore(int score) { evalScore = score; evalValid = true; }
     void recomputeEval();
 
 private:
@@ -119,5 +119,6 @@ private:
     std::array<Bitboard, 64> attackBitboards;
     std::array<Bitboard, 64> moveBitboards;
 
-    int evalScore = 0;
+    mutable int evalScore = 0;
+    mutable bool evalValid = false;
 };
