@@ -57,9 +57,15 @@ The engine automatically switches to UCI mode after receiving the `uci` command.
 MissingPawn includes built-in opening book knowledge and iterative-deepening search with time management.
 The Elo rating is stored in Releases.
 
+Documentation
+
+- [Changelog](Changelog.md) — A version-by-version summary of changes, improvements, and new features.
+- [Experimental Features](Experimental.md) — An overview of selected experimental systems and concepts developed for MissingPawn.
+- [Third-Party Notices](THIRD_PATRY_NOTICES.md) — Information about third-party components, dependencies, and their applicable licenses or notices.
+
 ## License
 
-This project is released under the GNU General Public License v3 License.
+This project is released under the [GNU General Public License v3 License](LICENSE).
 
 ## Author
 
